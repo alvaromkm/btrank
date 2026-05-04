@@ -1,0 +1,19 @@
+Package: btrank
+Title: Bradley-Terry Ranking Models for Paired Comparison Data
+Version: 0.0.0.9000
+Authors@R: 
+    person("Álvaro", "Meca", 
+           email = "aalvaromecaa11@gmail.com", 
+           role = c("aut", "cre"))
+Description: Fits Bradley-Terry models to estimate latent ability scores
+    from paired comparison data. Supports multiple metrics, temporal
+    weighting via exponential decay, and win probability matrices.
+    Designed for sports analytics, preference experiments, and any
+    domain where items are compared pairwise over time.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports: 
+    BradleyTerry2,
+    broom

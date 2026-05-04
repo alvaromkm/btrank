@@ -1,0 +1,5 @@
+^btrank\.Rproj$
+^\.Rproj\.user$
+use_build_ignore("ejemplos")
+^LICENSE\.md$
+^ejemplos$
