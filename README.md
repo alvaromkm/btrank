@@ -81,4 +81,4 @@ browseVignettes("btrank")
 
 ## License
 
-MIT © Alvaro Meca Mondejar
+MIT © Álvaro Meca Mondéjar
