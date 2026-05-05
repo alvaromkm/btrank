@@ -84,4 +84,4 @@ Springer. https://doi.org/10.1007/978-1-4939-1471-5
 
 ## License
 
-MIT © Alvaro Meca Mondejar
+MIT © Álvaro Meca Mondéjar
