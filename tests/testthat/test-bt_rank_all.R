@@ -70,3 +70,25 @@ test_that("bt_rank_all errors on invalid half_life", {
   expect_error(bt_rank_all(data_simple, score_col = "score", half_life = 0),
                "single positive number")
 })
+
+test_that("bt_rank_all with top_n re-fits on subset, not just truncates", {
+  # With enough items and clear hierarchy, re-fitting on subset
+  # produces different ability values than truncating the full model
+  datos_dom <- data.frame(
+    item   = c("Top", "Mid", "Bot", "Top", "Mid", "Bot", "Top", "Mid", "Bot"),
+    period = c(2021,  2021,  2021,  2022,  2022,  2022,  2023,  2023,  2023),
+    score  = c(95,    60,    30,    92,    58,    28,    97,    62,    25)
+  )
+
+  # Two-pass result from bt_rank_all
+  rk_two_pass <- bt_rank_all(datos_dom, score_col = "score", top_n = 2)
+
+  # Single-pass truncation manually
+  mat      <- bt_win_matrix(datos_dom, score_col = "score")
+  fit_full <- bt_fit(mat)
+  rk_trunc <- bt_rank(fit_full, top_n = 2)
+
+  # Items should be the same but abilities will differ
+  expect_equal(sort(rk_two_pass$item), sort(rk_trunc$item))
+  expect_false(identical(rk_two_pass$ability, rk_trunc$ability))
+})
