@@ -4,9 +4,11 @@
 #' builds the win count matrix, fits the model, and returns a ranked data
 #' frame. Optionally applies temporal weighting via exponential decay.
 #'
-#' This function is equivalent to calling [bt_win_matrix()], [bt_fit()], and
-#' [bt_rank()] in sequence. For more control over individual steps, use those
-#' functions directly.
+#' When `top_n` is specified, the function runs the pipeline in two passes.
+#' The first pass fits the model on all items to identify the top `top_n`
+#' performers. The second pass re-fits the model using only those items,
+#' so that the returned abilities reflect competitive strength within the
+#' selected subset rather than the full pool.
 #'
 #' @param data A data frame with one row per item per period. Must contain
 #'   at least the columns specified in `item_col`, `period_col`, and
@@ -20,8 +22,9 @@
 #' @param higher_is_better Logical. If `TRUE` (default), higher values of
 #'   `score_col` indicate a better outcome. Set to `FALSE` for metrics where
 #'   lower is better (e.g. time, errors).
-#' @param top_n Integer. If provided, only the top `top_n` items by ability
-#'   are returned. If `NULL` (default), all items are returned.
+#' @param top_n Integer. If provided, the model is first fitted on all items
+#'   to identify the top `top_n` performers, then re-fitted on that subset.
+#'   If `NULL` (default), all items are returned from a single model fit.
 #' @param half_life Positive number. If provided, exponential decay weights
 #'   are computed via [bt_weights()] and passed to [bt_win_matrix()]. The
 #'   most recent period receives weight 1; earlier periods receive
@@ -49,7 +52,7 @@
 #' # With temporal weighting
 #' bt_rank_all(data, score_col = "score", half_life = 1)
 #'
-#' # Top 2 items only
+#' # Top 2 only — model re-fitted on subset
 #' bt_rank_all(data, score_col = "score", top_n = 2)
 #'
 #' @export
@@ -66,7 +69,12 @@ bt_rank_all <- function(data,
   if (!is.data.frame(data)) {
     stop("`data` must be a data frame.", call. = FALSE)
   }
-
+  if (!is.null(top_n)) {
+    if (!is.numeric(top_n) || length(top_n) != 1 || top_n < 1) {
+      stop("`top_n` must be a single positive integer.", call. = FALSE)
+    }
+    top_n <- as.integer(top_n)
+  }
   if (!is.null(half_life)) {
     if (!is.numeric(half_life) || length(half_life) != 1 || half_life <= 0) {
       stop("`half_life` must be a single positive number.", call. = FALSE)
@@ -80,8 +88,8 @@ bt_rank_all <- function(data,
     weights <- bt_weights(periods = periods, half_life = half_life)
   }
 
-  # ── Run pipeline ──────────────────────────────────────────────────────────
-  win_mat <- bt_win_matrix(
+  # ── First pass: fit on all items ──────────────────────────────────────────
+  win_mat_full <- bt_win_matrix(
     data             = data,
     item_col         = item_col,
     period_col       = period_col,
@@ -89,8 +97,29 @@ bt_rank_all <- function(data,
     higher_is_better = higher_is_better,
     weights          = weights
   )
+  fit_full <- bt_fit(win_mat_full)
 
-  fit <- bt_fit(win_mat)
+  # ── If no top_n, return ranking from full model ───────────────────────────
+  if (is.null(top_n) || top_n >= length(fit_full$abilities)) {
+    return(bt_rank(fit_full, digits = digits))
+  }
 
-  bt_rank(fit, top_n = top_n, digits = digits)
+  # ── Identify TOP-N items from first pass ──────────────────────────────────
+  rk_full    <- bt_rank(fit_full)
+  top_items  <- rk_full$item[seq_len(top_n)]
+
+  # ── Second pass: re-fit on TOP-N subset only ──────────────────────────────
+  data_sub <- data[data[[item_col]] %in% top_items, ]
+
+  win_mat_sub <- bt_win_matrix(
+    data             = data_sub,
+    item_col         = item_col,
+    period_col       = period_col,
+    score_col        = score_col,
+    higher_is_better = higher_is_better,
+    weights          = weights
+  )
+  fit_sub <- bt_fit(win_mat_sub)
+
+  bt_rank(fit_sub, digits = digits)
 }

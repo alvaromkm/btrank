@@ -33,8 +33,9 @@ Default: \code{"period"}.}
 \code{score_col} indicate a better outcome. Set to \code{FALSE} for metrics where
 lower is better (e.g. time, errors).}
 
-\item{top_n}{Integer. If provided, only the top \code{top_n} items by ability
-are returned. If \code{NULL} (default), all items are returned.}
+\item{top_n}{Integer. If provided, the model is first fitted on all items
+to identify the top \code{top_n} performers, then re-fitted on that subset.
+If \code{NULL} (default), all items are returned from a single model fit.}
 
 \item{half_life}{Positive number. If provided, exponential decay weights
 are computed via \code{\link[=bt_weights]{bt_weights()}} and passed to \code{\link[=bt_win_matrix]{bt_win_matrix()}}. The
@@ -55,9 +56,11 @@ builds the win count matrix, fits the model, and returns a ranked data
 frame. Optionally applies temporal weighting via exponential decay.
 }
 \details{
-This function is equivalent to calling \code{\link[=bt_win_matrix]{bt_win_matrix()}}, \code{\link[=bt_fit]{bt_fit()}}, and
-\code{\link[=bt_rank]{bt_rank()}} in sequence. For more control over individual steps, use those
-functions directly.
+When \code{top_n} is specified, the function runs the pipeline in two passes.
+The first pass fits the model on all items to identify the top \code{top_n}
+performers. The second pass re-fits the model using only those items,
+so that the returned abilities reflect competitive strength within the
+selected subset rather than the full pool.
 }
 \examples{
 data <- data.frame(
@@ -72,7 +75,7 @@ bt_rank_all(data, score_col = "score")
 # With temporal weighting
 bt_rank_all(data, score_col = "score", half_life = 1)
 
-# Top 2 items only
+# Top 2 only — model re-fitted on subset
 bt_rank_all(data, score_col = "score", top_n = 2)
 
 }

@@ -32,10 +32,12 @@ other ability estimates are non-negative and directly interpretable as
 strength relative to the worst-performing item in the set.
 }
 \details{
-The fitting procedure runs in two passes. A first model is fit with an
-arbitrary reference item to identify the item with the lowest estimated
-ability. A second model is then re-fit using that weakest item as the
-reference, ensuring all reported ability estimates are >= 0.
+The fitting procedure runs in two internal passes. A first model is fit
+with an arbitrary reference item to identify the item with the lowest
+estimated ability. A second model is then re-fit using that weakest item
+as the reference, ensuring all reported ability estimates are >= 0.
+These two passes are internal to \code{bt_fit} and are distinct from the
+two-pass top-N selection performed by \code{\link[=bt_rank_all]{bt_rank_all()}}.
 
 Items with no wins and no losses in any comparison (i.e. all-zero rows and
 columns in \code{win_matrix}) are automatically dropped with a warning, as the
@@ -57,5 +59,6 @@ fit$reference    # item used as reference (ability = 0)
 \seealso{
 \code{\link[=bt_win_matrix]{bt_win_matrix()}} to build the input matrix,
 \code{\link[=bt_rank]{bt_rank()}} to extract a ranked data frame from the fitted model,
-\code{\link[=bt_prob_matrix]{bt_prob_matrix()}} to compute win probability matrices.
+\code{\link[=bt_prob_matrix]{bt_prob_matrix()}} to compute win probability matrices,
+\code{\link[=bt_rank_all]{bt_rank_all()}} for the full pipeline with two-pass top-N re-fitting.
 }

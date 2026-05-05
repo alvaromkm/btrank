@@ -10,7 +10,8 @@ bt_rank(fit, top_n = NULL, digits = 4)
 \item{fit}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
 
 \item{top_n}{Integer. If provided, only the top \code{top_n} items by ability
-are returned. If \code{NULL} (default), all items are returned.}
+are returned. The model is not re-fitted — results are simply truncated.
+If \code{NULL} (default), all items are returned.}
 
 \item{digits}{Integer. Number of decimal places for the ability column.
 Default: \code{4}.}
@@ -22,7 +23,7 @@ A data frame with one row per item and the following columns:
 \item{\code{item}}{Item identifier.}
 \item{\code{ability}}{Estimated log-ability (lambda). The reference item
 always has ability 0; all others are relative to it.}
-\item{\code{ability_norm}}{Ability normalised to the 0, 1 interval, where
+\item{\code{ability_norm}}{Ability normalised to the 0-1 interval, where
 1 is the strongest item and 0 is the reference. Useful for comparing
 rankings across different model fits.}
 }
@@ -31,6 +32,12 @@ rankings across different model fits.}
 Takes a fitted Bradley-Terry model (as produced by \code{\link[=bt_fit]{bt_fit()}}) and returns
 a tidy data frame with items ranked by their estimated latent ability,
 optionally limited to the top N items.
+}
+\details{
+Note: when \code{top_n} is specified here, the ranking is simply truncated after
+fitting — the model is not re-fitted on the subset. If you want the
+two-pass behaviour (fit on all items, then re-fit on the top subset),
+use \code{\link[=bt_rank_all]{bt_rank_all()}} with its \code{top_n} argument instead.
 }
 \examples{
 data <- data.frame(
@@ -44,11 +51,12 @@ fit <- bt_fit(mat)
 # Full ranking
 bt_rank(fit)
 
-# Top 2 only
+# Top 2 only (truncation only — no model re-fitting)
 bt_rank(fit, top_n = 2)
 
 }
 \seealso{
 \code{\link[=bt_fit]{bt_fit()}} to fit the model, \code{\link[=bt_prob_matrix]{bt_prob_matrix()}} to compute
-pairwise win probabilities from the same fit.
+pairwise win probabilities from the same fit, \code{\link[=bt_rank_all]{bt_rank_all()}} for the
+full pipeline with two-pass top-N re-fitting.
 }

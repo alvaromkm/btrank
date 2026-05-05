@@ -23,10 +23,12 @@
 #' }
 #'
 #' @details
-#' The fitting procedure runs in two passes. A first model is fit with an
-#' arbitrary reference item to identify the item with the lowest estimated
-#' ability. A second model is then re-fit using that weakest item as the
-#' reference, ensuring all reported ability estimates are >= 0.
+#' The fitting procedure runs in two internal passes. A first model is fit
+#' with an arbitrary reference item to identify the item with the lowest
+#' estimated ability. A second model is then re-fit using that weakest item
+#' as the reference, ensuring all reported ability estimates are >= 0.
+#' These two passes are internal to `bt_fit` and are distinct from the
+#' two-pass top-N selection performed by [bt_rank_all()].
 #'
 #' Items with no wins and no losses in any comparison (i.e. all-zero rows and
 #' columns in `win_matrix`) are automatically dropped with a warning, as the
@@ -34,7 +36,8 @@
 #'
 #' @seealso [bt_win_matrix()] to build the input matrix,
 #'   [bt_rank()] to extract a ranked data frame from the fitted model,
-#'   [bt_prob_matrix()] to compute win probability matrices.
+#'   [bt_prob_matrix()] to compute win probability matrices,
+#'   [bt_rank_all()] for the full pipeline with two-pass top-N re-fitting.
 #'
 #' @examples
 #' data <- data.frame(
@@ -48,6 +51,10 @@
 #' fit$abilities    # named vector of lambda estimates
 #' fit$reference    # item used as reference (ability = 0)
 #'
+#' @importFrom BradleyTerry2 BTm
+#' @importFrom broom tidy
+#' @importFrom utils combn
+#' @importFrom stats setNames
 #' @export
 bt_fit <- function(win_matrix) {
 
@@ -85,7 +92,7 @@ bt_fit <- function(win_matrix) {
   # ── Build long-format data frame for BTm ─────────────────────────────────
   df_bt <- .win_matrix_to_long(win_matrix)
 
-  # ── First pass: arbitrary reference to find the weakest item ─────────────
+  # ── First internal pass: arbitrary reference to find the weakest item ─────
   fit1 <- BradleyTerry2::BTm(
     outcome = cbind(wins1, wins2),
     player1 = item1,
@@ -96,10 +103,10 @@ bt_fit <- function(win_matrix) {
   abilities1 <- .extract_abilities(fit1, items)
   ref_item   <- abilities1$item[which.min(abilities1$ability)]
 
-  # ── Second pass: re-fit with weakest item as reference ───────────────────
+  # ── Second internal pass: re-fit with weakest item as reference ───────────
   new_levels <- c(ref_item, setdiff(items, ref_item))
 
-  df_bt2 <- df_bt
+  df_bt2       <- df_bt
   df_bt2$item1 <- factor(as.character(df_bt$item1), levels = new_levels)
   df_bt2$item2 <- factor(as.character(df_bt$item2), levels = new_levels)
 
@@ -110,7 +117,7 @@ bt_fit <- function(win_matrix) {
     data    = df_bt2
   )
 
-  abilities2 <- .extract_abilities(fit2, new_levels)
+  abilities2    <- .extract_abilities(fit2, new_levels)
   abilities_vec <- setNames(abilities2$ability, abilities2$item)
 
   # ── Return btfit object ───────────────────────────────────────────────────
@@ -148,10 +155,9 @@ bt_fit <- function(win_matrix) {
 #' Extract named ability estimates from a BTm model
 #' @noRd
 .extract_abilities <- function(bt_model, all_items) {
-  coefs <- broom::tidy(bt_model)
+  coefs      <- broom::tidy(bt_model)
   coefs$item <- gsub("^\\.\\.", "", coefs$term)
-
-  ref_item <- setdiff(all_items, coefs$item)
+  ref_item   <- setdiff(all_items, coefs$item)
 
   rbind(
     data.frame(item = coefs$item, ability = coefs$estimate,
@@ -168,10 +174,6 @@ bt_fit <- function(win_matrix) {
 #' Print method for btfit objects
 #' @param x A `btfit` object.
 #' @param ... Further arguments (ignored).
-#' @importFrom BradleyTerry2 BTm
-#' @importFrom broom tidy
-#' @importFrom utils combn
-#' @importFrom stats setNames
 #' @export
 print.btfit <- function(x, ...) {
   cat("Bradley-Terry model fit\n")
