@@ -3,3 +3,5 @@
 use_build_ignore("ejemplos")
 ^LICENSE\.md$
 ^ejemplos$
+^doc$
+^Meta$

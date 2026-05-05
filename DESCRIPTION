@@ -17,3 +17,9 @@ RoxygenNote: 7.3.3
 Imports: 
     BradleyTerry2,
     broom
+URL: https://github.com/alvaromkm/btrank
+BugReports: https://github.com/alvaromkm/btrank/issues
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

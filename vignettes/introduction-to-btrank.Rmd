@@ -1,0 +1,279 @@
+---
+title: "Introduction to btrank: Bradley-Terry Rankings for Paired Comparison Data"
+author: "Alvaro Meca Mondejar"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to btrank: Bradley-Terry Rankings for Paired Comparison Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 4,
+  warning  = FALSE,
+  message  = FALSE
+)
+```
+
+## Overview
+
+The **btrank** package provides a complete pipeline for estimating latent 
+ability scores from paired comparison data using the **Bradley-Terry model** 
+(Bradley & Terry, 1952). 
+
+
+In a Bradley-Terry model, each item (team, player, product, candidate) is 
+assigned a latent ability parameter $\lambda_i$. Given two items $i$ and $j$, 
+the probability that $i$ outperforms $j$ is:
+
+$$P(i \text{ beats } j) = \frac{e^{\lambda_i}}{e^{\lambda_i} + e^{\lambda_j}}$$
+
+
+The model is estimated from pairwise comparisons aggregated across multiple 
+periods (seasons, years, rounds). This makes it particularly suitable for 
+ranking items whose relative strength evolves over time.
+
+
+**btrank** extends the standard Bradley-Terry framework with:
+
+
+- Support for **multiple metrics** as the basis for pairwise comparisons.
+
+
+- **Temporal weighting** via exponential decay (Ley et al., 2019), allowing 
+  recent periods to carry more influence. Each period $t$ receives a weight:
+
+$$w_t = \left(\frac{1}{2}\right)^{(T - t) \,/\, T_{1/2}}$$
+
+where $T$ is the most recent period and $T_{1/2}$ is the half-life parameter  controlling the rate of decay. The most recent period always has weight 1.
+  
+  
+- A clean, pipe-friendly API that separates data ingestion, model fitting and result extraction into modular functions.
+  
+
+## Installation
+
+```{r install, eval = FALSE}
+# Install from GitHub
+remotes::install_github("alvaromkm/btrank")
+```
+
+```{r load}
+library(btrank)
+```
+
+
+## Input data format
+
+**btrank** expects a data frame with one row per item per period. The minimum 
+required columns are:
+
+
+| Column | Description |
+|--------|-------------|
+| `item` | Item identifier (team, player, product, ...) |
+| `period` | Period identifier (season, year, round, ...) |
+| `score` | Numeric metric used to rank items within each period |
+
+
+Column names are fully customisable via the `item_col`, `period_col` and 
+`score_col` arguments. By default, higher values of `score` indicate better 
+performance. Set `higher_is_better = FALSE` for metrics where lower is better 
+(e.g. time, errors).
+
+
+## Basic pipeline
+
+The package provides two workflows depending on the level of control needed.
+
+### One-step workflow
+
+For most use cases, `bt_rank_all()` runs the full pipeline in a single call:
+
+```{r basic-example}
+# Five chess players across four tournaments
+chess <- data.frame(
+  item   = c("Carlsen", "Caruana", "Ding", "Nepomniachtchi", "Gukesh",
+             "Carlsen", "Caruana", "Ding", "Nepomniachtchi", "Gukesh",
+             "Carlsen", "Caruana", "Ding", "Nepomniachtchi", "Gukesh",
+             "Carlsen", "Caruana", "Ding", "Nepomniachtchi", "Gukesh"),
+  period = c(rep(2020, 5), rep(2021, 5), rep(2022, 5), rep(2023, 5)),
+  score  = c(87, 82, 74, 78, 65,
+             89, 80, 76, 75, 68,
+             91, 83, 77, 73, 72,
+             90, 84, 75, 71, 78)
+)
+
+bt_rank_all(chess, score_col = "score")
+```
+
+### Step-by-step workflow
+
+For more control, the pipeline can be run function by function:
+
+```{r stepbystep}
+# Step 1: build the pairwise win count matrix
+win_mat <- bt_win_matrix(chess, score_col = "score")
+
+# Step 2: fit the Bradley-Terry model
+fit <- bt_fit(win_mat)
+print(fit)
+
+# Step 3: extract the ranking
+bt_rank(fit)
+
+# Step 4 (optional): compute win probability matrix
+round(bt_prob_matrix(fit), 3)
+```
+
+
+
+## Temporal weighting
+
+By default, all periods contribute equally to the model. When performance 
+evolves over time — for instance, when younger competitors improve 
+consistently across seasons — it may be desirable to assign greater influence 
+to more recent periods.
+
+
+`bt_weights()` computes exponential decay weights for a set of periods. The 
+`half_life` parameter controls how quickly the influence of past periods fades:
+a shorter half-life concentrates the ranking on recent performance, while a 
+longer one treats all periods more uniformly.
+
+```{r weights}
+# Inspect weights for different half-life values
+w_aggressive <- bt_weights(periods = 2020:2023, half_life = 1)
+w_smooth     <- bt_weights(periods = 2020:2023, half_life = 3)
+
+round(rbind(
+  "half_life = 1" = w_aggressive,
+  "half_life = 3" = w_smooth
+), 4)
+```
+
+The weights can be passed directly to `bt_win_matrix()`, or implicitly via 
+the `half_life` argument of `bt_rank_all()`:
+
+```{r weighted-ranking}
+# Without temporal weighting
+rk_flat <- bt_rank_all(chess, score_col = "score")
+
+# With temporal weighting — recent seasons matter more
+rk_weighted <- bt_rank_all(chess, score_col = "score", half_life = 1)
+
+# Compare rankings side by side
+merge(
+  data.frame(item = rk_flat$item,     rank_flat     = rk_flat$rank),
+  data.frame(item = rk_weighted$item, rank_weighted = rk_weighted$rank),
+  by = "item"
+)
+```
+
+Notice how items whose performance improves in later periods gain positions 
+when temporal weighting is applied. In this dataset, Gukesh scores 
+consistently higher in 2022 and 2023 than in earlier periods, which is 
+reflected in a better ranking under aggressive weighting.
+
+
+
+## Win probability matrix
+
+Once the model is fitted, `bt_prob_matrix()` computes the probability that 
+any item beats any other item in a direct comparison. This provides a more 
+nuanced view of competitive strength than a simple ranking — two items may be 
+adjacent in the ranking but have very different win probabilities against 
+specific opponents.
+
+```{r prob-matrix}
+win_mat <- bt_win_matrix(chess, score_col = "score")
+fit     <- bt_fit(win_mat)
+pm      <- bt_prob_matrix(fit)
+
+round(pm, 3)
+```
+
+Entry `[i, j]` is the probability that item in row $i$ beats item in column 
+$j$. The diagonal is `NA` by default. By construction, 
+$P(i \text{ beats } j) + P(j \text{ beats } i) = 1$ for all pairs.
+
+
+A useful summary is to identify dominant pairs — those where one item has a 
+win probability above a chosen threshold:
+
+```{r dominance}
+threshold <- 0.75
+
+dominant <- which(pm > threshold, arr.ind = TRUE)
+if (nrow(dominant) > 0) {
+  data.frame(
+    winner   = rownames(pm)[dominant[, 1]],
+    loser    = colnames(pm)[dominant[, 2]],
+    prob_win = round(pm[dominant], 3)
+  )
+} else {
+  message("No pairs exceed the threshold of ", threshold)
+}
+```
+
+The matrix is ordered by estimated ability (strongest item first) by default. 
+Use `order_by = "name"` for alphabetical ordering:
+
+```{r prob-matrix-alpha}
+round(bt_prob_matrix(fit, order_by = "name"), 3)
+```
+
+
+## Interpreting the ability parameter
+
+
+The ability estimates $\lambda_i$ returned by `bt_rank()` are log-scale 
+parameters relative to the weakest item in the set, which is always fixed 
+at $\lambda = 0$. This means:
+
+
+- A value of $\lambda_i = 0$ indicates the reference item (worst performer).
+
+
+- All other values are **positive** and express strength relative to the 
+  reference.
+  
+  
+- The absolute magnitude of $\lambda_i$ depends on the number of items, 
+  periods, and degree of separation between them — it is not directly 
+  comparable across different model fits.
+  
+
+For cross-model comparisons, use the `ability_norm` column returned by 
+`bt_rank()`, which rescales abilities to the $[0, 1]$ interval:
+
+```{r ability-norm}
+bt_rank(fit)
+```
+
+The `ability_norm` column maps the weakest item to 0 and the strongest to 1, 
+making relative comparisons between different rankings more interpretable.
+
+
+## References
+
+Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete block 
+designs: I. The method of paired comparisons. *Biometrika*, 39(3/4), 324–345.
+
+
+Ley, C., Van Eetvelde, M., Claeskens, G., & Winkler, R. L. (2019). Ranking 
+soccer teams on the basis of their current strength: A comparison of maximum 
+likelihood approaches. *Statistical Modelling*, 19(1), 55–73.
+
+
+Alvo, M., & Yu, P. L. H. (2014). *Statistical Methods for Ranking Data*. 
+Springer, New York. https://doi.org/10.1007/978-1-4939-1471-5
+
+
+Yu, P. L. H., Gu, J., & Xu, H. (2019). Analysis of ranking data. 
+*WIREs Computational Statistics*. https://doi.org/10.1002/wics.1483
