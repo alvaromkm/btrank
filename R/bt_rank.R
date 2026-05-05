@@ -10,8 +10,10 @@
 #' use [bt_rank_all()] with its `top_n` argument instead.
 #'
 #' @param fit A `btfit` object as returned by [bt_fit()].
-#' @param top_n Integer. If provided, only the top `top_n` items by ability
-#'   are returned. The model is not re-fitted — results are simply truncated.
+#' @param top_n Integer. If provided, the ranking is truncated to the top
+#'   `top_n` items after fitting. This is a simple truncation — the model
+#'   is not re-fitted on the subset. For two-pass top-N selection with
+#'   model re-fitting, use [bt_rank_all()] instead.
 #'   If `NULL` (default), all items are returned.
 #' @param digits Integer. Number of decimal places for the ability column.
 #'   Default: `4`.

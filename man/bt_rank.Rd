@@ -9,8 +9,10 @@ bt_rank(fit, top_n = NULL, digits = 4)
 \arguments{
 \item{fit}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
 
-\item{top_n}{Integer. If provided, only the top \code{top_n} items by ability
-are returned. The model is not re-fitted — results are simply truncated.
+\item{top_n}{Integer. If provided, the ranking is truncated to the top
+\code{top_n} items after fitting. This is a simple truncation — the model
+is not re-fitted on the subset. For two-pass top-N selection with
+model re-fitting, use \code{\link[=bt_rank_all]{bt_rank_all()}} instead.
 If \code{NULL} (default), all items are returned.}
 
 \item{digits}{Integer. Number of decimal places for the ability column.
