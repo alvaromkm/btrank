@@ -5,3 +5,4 @@ use_build_ignore("ejemplos")
 ^ejemplos$
 ^doc$
 ^Meta$
+^README\.Rmd$
