@@ -81,4 +81,4 @@ browseVignettes("btrank")
 
 ## License
 
-MIT © Álvaro Meca Mondéjar
+MIT © Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso, Juan de Dios Luna del Castillo

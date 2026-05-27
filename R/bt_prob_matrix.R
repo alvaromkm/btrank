@@ -55,24 +55,12 @@ bt_prob_matrix <- function(fit, order_by = c("ability", "name")) {
   )
 
   abilities <- abilities[item_order]
-  n         <- length(abilities)
 
-  # ── Compute probability matrix ────────────────────────────────────────────
-  mat <- matrix(
-    NA_real_,
-    nrow     = n,
-    ncol     = n,
-    dimnames = list(item_order, item_order)
-  )
-
-  for (i in seq_len(n)) {
-    for (j in seq_len(n)) {
-      if (i == j) next
-      li <- abilities[i]
-      lj <- abilities[j]
-      mat[i, j] <- exp(li) / (exp(li) + exp(lj))
-    }
-  }
+  # ── Compute probability matrix (vectorised) ───────────────────────────────
+  e_lambda <- exp(abilities)
+  mat      <- outer(e_lambda, e_lambda, function(a, b) a / (a + b))
+  diag(mat) <- NA_real_
+  dimnames(mat) <- list(item_order, item_order)
 
   mat
 }

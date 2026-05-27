@@ -1,6 +1,6 @@
 ---
 title: "Introduction to btrank: Bradley-Terry Rankings for Paired Comparison Data"
-author: "Alvaro Meca Mondejar"
+author: "Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso, Juan de Dios Luna del Castillo"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >

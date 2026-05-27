@@ -1,6 +1,6 @@
 # MIT License
 
-Copyright (c) 2026 Alvaro Meca Mondejar
+Copyright (c) 2026 Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso, Juan de Dios Luna del Castillo
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

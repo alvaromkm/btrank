@@ -27,11 +27,11 @@ test_that("bt_win_matrix row and column names match items", {
 test_that("bt_win_matrix win counts are symmetric complements", {
   mat <- bt_win_matrix(data_simple, score_col = "score")
   items <- rownames(mat)
+  # data_simple has 2 periods with no ties, so every pair sums to 2
   for (i in items) {
     for (j in items) {
       if (i != j) {
-        expect_equal(mat[i, j] + mat[j, i],
-                     mat[i, j] + mat[j, i])
+        expect_equal(mat[i, j] + mat[j, i], 2)
       }
     }
   }

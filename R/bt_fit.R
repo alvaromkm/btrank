@@ -52,9 +52,8 @@
 #' fit$reference    # item used as reference (ability = 0)
 #'
 #' @importFrom BradleyTerry2 BTm
-#' @importFrom broom tidy
 #' @importFrom utils combn
-#' @importFrom stats setNames
+#' @importFrom stats coef setNames
 #' @export
 bt_fit <- function(win_matrix) {
 
@@ -155,12 +154,12 @@ bt_fit <- function(win_matrix) {
 #' Extract named ability estimates from a BTm model
 #' @noRd
 .extract_abilities <- function(bt_model, all_items) {
-  coefs      <- broom::tidy(bt_model)
-  coefs$item <- gsub("^\\.\\.", "", coefs$term)
-  ref_item   <- setdiff(all_items, coefs$item)
+  coef_mat   <- coef(summary(bt_model))
+  item_names <- gsub("^\\.\\.", "", rownames(coef_mat))
+  ref_item   <- setdiff(all_items, item_names)
 
   rbind(
-    data.frame(item = coefs$item, ability = coefs$estimate,
+    data.frame(item = item_names, ability = coef_mat[, "Estimate"],
                stringsAsFactors = FALSE),
     data.frame(item = ref_item,   ability = 0,
                stringsAsFactors = FALSE)
@@ -172,8 +171,15 @@ bt_fit <- function(win_matrix) {
 # =============================================================================
 
 #' Print method for btfit objects
+#'
+#' @description
+#' Displays a compact summary of a fitted Bradley-Terry model: the number of
+#' items, the reference item (whose ability is fixed to 0), and the estimated
+#' log-ability (lambda) values sorted from strongest to weakest.
+#'
 #' @param x A `btfit` object.
 #' @param ... Further arguments (ignored).
+#' @return Invisibly returns `x`.
 #' @export
 print.btfit <- function(x, ...) {
   cat("Bradley-Terry model fit\n")

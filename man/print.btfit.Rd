@@ -11,6 +11,11 @@
 
 \item{...}{Further arguments (ignored).}
 }
+\value{
+Invisibly returns \code{x}.
+}
 \description{
-Print method for btfit objects
+Displays a compact summary of a fitted Bradley-Terry model: the number of
+items, the reference item (whose ability is fixed to 0), and the estimated
+log-ability (lambda) values sorted from strongest to weakest.
 }
