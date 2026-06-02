@@ -2,6 +2,7 @@
 ^\.Rproj\.user$
 ^ejemplos$
 ^doc$
+^LICENSE\.md$
 ^Meta$
 ^README\.Rmd$
 ^cran-comments\.md$
