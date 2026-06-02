@@ -1,0 +1,12 @@
+bibentry(
+  bibtype  = "Manual",
+  title    = "btrank: Bradley-Terry Ranking Models for Paired Comparison Data",
+  author   = c(
+    person("Álvaro", "Meca Mondéjar"),
+    person("Miguel Ángel", "Montero Alonso"),
+    person("Juan de Dios", "Luna del Castillo")
+  ),
+  year     = "2026",
+  note     = "R package version 0.1.0",
+  url      = "https://github.com/alvaromkm/btrank"
+)
