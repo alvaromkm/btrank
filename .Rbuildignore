@@ -1,7 +1,7 @@
 ^btrank\.Rproj$
 ^\.Rproj\.user$
-^LICENSE\.md$
 ^ejemplos$
 ^doc$
 ^Meta$
 ^README\.Rmd$
+^cran-comments\.md$

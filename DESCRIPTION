@@ -17,7 +17,7 @@ Description: Fits Bradley-Terry models to estimate latent ability scores
     weighting via exponential decay, and win probability matrices.
     Designed for sports analytics, preference experiments, and any
     domain where items are compared pairwise over time.
-License: MIT + file LICENSE
+License: GPL (>= 3)
 Encoding: UTF-8
 Language: en
 Roxygen: list(markdown = TRUE)
