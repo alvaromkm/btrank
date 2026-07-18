@@ -265,11 +265,13 @@ making relative comparisons between different rankings more interpretable.
 Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete block 
 designs: I. The method of paired comparisons. *Biometrika*, 39(3/4), 324–345.
 
+Turner, H., & Firth, D. (2012). Bradley-Terry models in R: The BradleyTerry2 
+package. *Journal of Statistical Software*, 48(9), 1–21. 
+https://doi.org/10.18637/jss.v048.i09
 
-Ley, C., Van Eetvelde, M., Claeskens, G., & Winkler, R. L. (2019). Ranking 
-soccer teams on the basis of their current strength: A comparison of maximum 
-likelihood approaches. *Statistical Modelling*, 19(1), 55–73.
-
+Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019).
+Ranking soccer teams on the basis of their current strength: A comparison
+of maximum likelihood approaches. *Statistical Modelling*, 19(1), 55–73.
 
 Alvo, M., & Yu, P. L. H. (2014). *Statistical Methods for Ranking Data*. 
 Springer, New York. https://doi.org/10.1007/978-1-4939-1471-5

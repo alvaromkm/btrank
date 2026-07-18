@@ -81,5 +81,5 @@ browseVignettes("btrank")
 
 ## License
 
-MIT © Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso, Juan de Dios
-Luna del Castillo
+GPL (\>= 3) © 2026 Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso,
+Juan de Dios Luna del Castillo

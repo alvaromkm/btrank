@@ -19,11 +19,13 @@ Description: Fits Bradley-Terry models to estimate latent ability scores
     domain where items are compared pairwise over time.
 License: GPL (>= 3)
 Encoding: UTF-8
+LazyData: true
 Language: en
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports: 
-    BradleyTerry2
+    BradleyTerry2,
+    graphics
 URL: https://github.com/alvaromkm/btrank
 BugReports: https://github.com/alvaromkm/btrank/issues
 Suggests: 
@@ -32,3 +34,5 @@ Suggests:
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
+Depends: 
+    R (>= 3.5)

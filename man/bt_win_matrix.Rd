@@ -10,7 +10,9 @@ bt_win_matrix(
   period_col = "period",
   score_col = "score",
   higher_is_better = TRUE,
-  weights = NULL
+  weights = NULL,
+  absent = c("ignore", "penalize"),
+  absent_penalty = 1
 )
 }
 \arguments{
@@ -35,17 +37,70 @@ Set to \code{FALSE} for metrics where lower is better (e.g. time, errors).}
 names match values in \code{period_col}. If \code{NULL} (default), all periods
 receive equal weight of 1. Use \code{\link[=bt_weights]{bt_weights()}} to generate exponential
 decay weights.}
+
+\item{absent}{Character. How to treat items that belong to the item
+universe (all items appearing anywhere in \code{data}) but have no row, or
+an \code{NA} score, in a given period. One of \code{"ignore"} (default: no
+comparison is generated for that item that period — the current,
+unchanged behaviour) or \code{"penalize"} (every item present that period
+is credited a structural win against the absent item, weighted by
+\code{absent_penalty} and the period's temporal weight).}
+
+\item{absent_penalty}{Non-negative number. Only used when
+\code{absent = "penalize"}. \code{1} (default) treats the absence as equivalent
+in magnitude to a genuine loss that period. Values in \verb{(0, 1)} soften
+the penalty; \code{0} is equivalent to \code{"ignore"} but explicit. This
+operates directly on win/loss counts, never on \code{score_col}, so an
+absence can never be confused with a genuine observed score value
+(e.g. a real score of 0 is not the same event as not playing).
+
+Two effects have been verified empirically and should be considered
+before choosing a value: (1) a sufficiently high \code{absent_penalty} can
+change which item \code{\link[=bt_fit]{bt_fit()}} selects as the reference item, since
+accumulated structural losses lower the penalized item's estimated
+ability; (2) increasing \code{absent_penalty} shrinks the standard error of
+the penalized item's ability difference against other items, because
+the structural comparisons are treated as additional information by
+the likelihood even though they are not observed data. There is no
+principled default threshold for \code{absent_penalty}; report results
+under a range of values (sensitivity analysis) rather than a single
+fixed choice.}
 }
 \value{
 A square numeric matrix of dimension n_items × n_items, where
 entry \verb{[i, j]} is the (possibly weighted) number of periods in which
-item \code{i} outperformed item \code{j}. Row and column names are item identifiers.
+item \code{i} outperformed item \code{j} — including, when \code{absent = "penalize"},
+structural wins credited against items absent that period. Row and
+column names are item identifiers.
 }
 \description{
 For each pair of items and each period, records which item ranked higher
 according to the chosen metric. Aggregates all pairwise period-level
 comparisons into a win count matrix suitable for Bradley-Terry estimation.
 Ties are split as 0.5 wins each.
+}
+\details{
+The item universe is defined as every distinct value in \code{item_col}
+across the \emph{entire} \code{data} passed in — not just the items present in
+any single period. This means the caller is responsible for bounding
+the time window before calling \code{bt_win_matrix()}: passing an unfiltered,
+multi-decade dataset with \code{absent = "penalize"} will accumulate
+structural losses for every period an item is missing, which may not be
+the intended comparison window.
+
+\code{absent = "ignore"} is the default because it makes no assumption about
+why an item is missing from a period. \code{absent = "penalize"} encodes a
+specific modelling choice — that absence itself is informative (e.g.
+relegation from a league) — and should be selected and justified
+explicitly, not left as an implicit default. For contrast, Liu,
+Battaglia & Wu (2025, \emph{PLOS One}) handle the same promotion/relegation
+scenario in the English Premier League by excluding teams without
+consistent presence across the full period, rather than penalizing
+their absence.
+
+Both \code{weights} and \code{absent_penalty} can produce non-integer entries in
+the returned matrix. See the Details section of \code{\link[=bt_fit]{bt_fit()}} for how this
+interacts with the underlying \code{glm()} fit.
 }
 \examples{
 # Simple example: three teams over two seasons
@@ -62,6 +117,18 @@ w <- bt_weights(periods = c(2022, 2023), half_life = 1)
 mat_w <- bt_win_matrix(data, score_col = "score", weights = w)
 mat_w
 
+# Item C is absent in 2023 (e.g. relegated): penalize instead of ignore
+data_absent <- data[-6, ]  # drop C's 2023 row
+mat_ignored   <- bt_win_matrix(data_absent, score_col = "score")
+mat_penalized <- bt_win_matrix(data_absent, score_col = "score",
+                               absent = "penalize", absent_penalty = 1)
+
+}
+\references{
+Liu, H. H., Battaglia, J., & Wu, T. T. (2025). Impact of COVID-19 on
+English Football Premier League: Analyzing rankings and home advantage
+using extended Bradley-Terry models. \emph{PLOS One}, 20(10), e0332627.
+https://doi.org/10.1371/journal.pone.0332627
 }
 \seealso{
 \code{\link[=bt_fit]{bt_fit()}} to fit a Bradley-Terry model from the win matrix,

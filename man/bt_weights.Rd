@@ -51,7 +51,7 @@ bt_weights(periods = c("2021-22", "2022-23", "2023-24"), half_life = 1)
 
 }
 \references{
-Ley, C., Van Eetvelde, M., Claeskens, G., & Winkler, R. L. (2019).
+Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019).
 Ranking soccer teams on the basis of their current strength: A comparison
 of maximum likelihood approaches. \emph{Statistical Modelling}, 19(1), 55–73.
 }

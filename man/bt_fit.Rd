@@ -22,6 +22,9 @@ parameters, one per item. The reference item has ability 0.}
 \pkg{BradleyTerry2} package, for advanced use.}
 \item{\code{items}}{Character vector of all item names, in the order used
 internally by the model.}
+\item{\code{separation_items}}{Character vector of item names exhibiting
+quasi-complete separation (zero wins or zero losses across all
+comparisons). Empty (\code{character(0)}) if none. See Details.}
 }
 }
 \description{
@@ -32,6 +35,8 @@ other ability estimates are non-negative and directly interpretable as
 strength relative to the worst-performing item in the set.
 }
 \details{
+Internally, \code{bt_fit()} estimates the model via maximum likelihood using
+\code{BradleyTerry2::BTm()} (Turner & Firth, 2012).
 The fitting procedure runs in two internal passes. A first model is fit
 with an arbitrary reference item to identify the item with the lowest
 estimated ability. A second model is then re-fit using that weakest item
@@ -42,6 +47,28 @@ two-pass top-N selection performed by \code{\link[=bt_rank_all]{bt_rank_all()}}.
 Items with no wins and no losses in any comparison (i.e. all-zero rows and
 columns in \code{win_matrix}) are automatically dropped with a warning, as the
 model cannot estimate their ability.
+
+Separately, items that never win (but do lose) or never lose (but do win)
+any comparison are \strong{not} dropped, but flagged in \code{separation_items} and
+reported via a warning. Such items induce quasi-complete separation in the
+underlying logistic likelihood: the point estimate returned is finite
+(bounded by the optimiser's iteration limit) but its standard error is not
+a meaningful measure of uncertainty. Any standard error, confidence
+interval, or significance test involving a flagged item should be treated
+with caution, or omitted, downstream (see \code{summary.btfit()}).
+
+When \code{\link[=bt_win_matrix]{bt_win_matrix()}} is used with temporal weighting (\code{weights}) or
+\code{absent = "penalize"}, the resulting win counts are generally non-integer.
+\code{BradleyTerry2::BTm()}'s underlying \code{glm()} call emits a
+\code{"non-integer counts in a binomial glm!"} warning in this case; this is
+the same device Turner & Firth (2012, Section 9.1) describe for their
+tie-splitting adjustment, and they state it is safe to ignore for point
+estimates. \code{bt_fit()} suppresses only this specific warning (see
+\code{.muffle_noninteger_count_warning()} below); every other warning from the fit, including
+non-convergence, is left untouched. Standard errors under non-integer
+counts are not addressed by Turner & Firth and are not separately
+validated here; see the \code{absent_penalty} documentation in
+\code{\link[=bt_win_matrix]{bt_win_matrix()}} for a known effect on precision.
 }
 \examples{
 data <- data.frame(
@@ -55,6 +82,11 @@ fit <- bt_fit(mat)
 fit$abilities    # named vector of lambda estimates
 fit$reference    # item used as reference (ability = 0)
 
+}
+\references{
+Turner, H., & Firth, D. (2012). Bradley-Terry models in R: The BradleyTerry2
+package. \emph{Journal of Statistical Software}, 48(9), 1–21.
+https://doi.org/10.18637/jss.v048.i09
 }
 \seealso{
 \code{\link[=bt_win_matrix]{bt_win_matrix()}} to build the input matrix,
