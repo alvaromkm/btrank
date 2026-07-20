@@ -83,7 +83,6 @@ better (e.g. time, errors).
 ## The EPL dataset
 
 ```{r load-data}
-data(epl_scores)
 dim(epl_scores)
 head(epl_scores, 8)
 ```
