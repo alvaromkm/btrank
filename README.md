@@ -12,9 +12,16 @@ compared pairwise across multiple periods.
 - Flexible input: accepts any data frame with item, period, and score
   columns
 - Temporal weighting via exponential decay (Ley et al., 2019)
+- Explicit handling of items absent from a period (promotion/relegation
+  and similar cases), with a choice between ignoring absence or
+  penalizing it
+- Uncertainty quantification (Wald confidence intervals, pairwise
+  significance tests) with automatic detection and flagging of
+  quasi-complete separation
 - Win probability matrix between all pairs of items
 - Modular pipeline and a convenient one-step wrapper
-- Full roxygen2 documentation and a worked vignette
+- Full roxygen2 documentation and a worked vignette on 31 seasons of
+  real English Premier League data
 
 ## Installation
 
@@ -51,18 +58,24 @@ bt_rank_all(results, score_col = "score", half_life = 1)
 
 ## Pipeline overview
 
-| Function           | Description                        |
-|--------------------|------------------------------------|
-| `bt_win_matrix()`  | Build pairwise win count matrix    |
-| `bt_fit()`         | Fit Bradley-Terry model            |
-| `bt_rank()`        | Extract ranked data frame          |
-| `bt_prob_matrix()` | Compute win probability matrix     |
-| `bt_weights()`     | Generate exponential decay weights |
-| `bt_rank_all()`    | Full pipeline in one call          |
+| Function | Description |
+|----|----|
+| `bt_win_matrix()` | Build pairwise win count matrix (with temporal weighting and `absent` handling) |
+| `bt_fit()` | Fit Bradley-Terry model; flags quasi-complete separation |
+| `bt_rank()` | Extract ranked data frame |
+| `bt_prob_matrix()` | Compute win probability matrix |
+| `bt_weights()` | Generate exponential decay weights |
+| `bt_rank_all()` | Full pipeline in one call |
+| `summary()` / `confint()` | Wald standard errors and confidence intervals |
+| `bt_significance_matrix()` | Pairwise significance tests (Holm-adjusted) |
+| `plot()` | Caterpillar plot of abilities with confidence intervals |
 
 ## Vignette
 
-A full worked example with methodological background is available at:
+A full worked example on 31 seasons of real English Premier League data
+— covering multi-metric comparisons, temporal decay,
+promotion/relegation, separation, and an external validation against Elo
+ratings — is available at:
 
 ``` r
 browseVignettes("btrank")
@@ -72,6 +85,8 @@ browseVignettes("btrank")
 
 - Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete
   block designs. *Biometrika*, 39(3/4), 324–345.
+- Turner, H., & Firth, D. (2012). Bradley-Terry models in R: The
+  BradleyTerry2 package. *Journal of Statistical Software*, 48(9), 1–21.
 - Ley, C., et al. (2019). Ranking soccer teams on the basis of their
   current strength. *Statistical Modelling*, 19(1), 55–73.
 - Alvo, M., & Yu, P. L. H. (2014). *Statistical Methods for Ranking
