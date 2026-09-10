@@ -466,7 +466,7 @@ https://doi.org/10.18637/jss.v048.i09
 
 Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019).
 Ranking soccer teams on the basis of their current strength: A comparison
-of maximum likelihood approaches. *Statistical Modelling*, 19(1), 55–73.
+of maximum likelihood approaches. *Statistical Modelling*, 19(1), 55-77.
 
 Liu, H. H., Battaglia, J., & Wu, T. T. (2025). Impact of COVID-19 on
 English Football Premier League: Analyzing rankings and home advantage
@@ -478,3 +478,6 @@ Publishing, New York.
 
 football-data.co.uk. English Premier League results, 1995/96–2025/26.
 https://www.football-data.co.uk/englandm.php
+
+Firth, D. (1993). Bias reduction of maximum likelihood estimates.
+*Biometrika*, 80(1), 27–38.
