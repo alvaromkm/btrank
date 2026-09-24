@@ -13,8 +13,6 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment  = "#>",
-  fig.width  = 7,
-  fig.height = 4,
   warning  = FALSE,
   message  = FALSE
 )
@@ -22,37 +20,24 @@ knitr::opts_chunk$set(
 
 ## Overview
 
-The **btrank** package provides a complete pipeline for estimating latent
-ability scores from paired comparison data using the **Bradley-Terry model**
-(Bradley & Terry, 1952). In a Bradley-Terry model, each item (team, player,
-product, candidate) is assigned a latent ability parameter $\lambda_i$.
-Given two items $i$ and $j$, the probability that $i$ outperforms $j$ is:
+**btrank** estimates latent ability scores from paired comparison data using
+the Bradley-Terry model (Bradley & Terry, 1952). Each item $i$ has a latent
+ability $\lambda_i$; for two items $i, j$:
 
 $$P(i \text{ beats } j) = \frac{e^{\lambda_i}}{e^{\lambda_i} + e^{\lambda_j}}$$
 
-The model is estimated from pairwise comparisons aggregated across multiple
-periods (seasons, years, rounds), making it particularly suitable for
-ranking items whose relative strength evolves over time. **btrank** extends
-the standard framework with:
+The package supplies a small, composable set of functions around this
+model: building pairwise comparisons from repeated observations
+(`bt_win_matrix()`), fitting the model (`bt_fit()`), extracting and
+comparing results (`bt_rank()`, `bt_prob_matrix()`), quantifying
+uncertainty (`summary.btfit()`, `confint.btfit()`,
+`bt_significance_matrix()`), and visualising a fit (`plot.btfit()`).
 
-- Support for **multiple metrics** as the basis for pairwise comparisons.
-- **Temporal weighting** via exponential decay (Ley et al., 2019), allowing
-  recent periods to carry more influence. Each period $t$ receives a weight
-
-$$w_t = \left(\frac{1}{2}\right)^{(T - t) \,/\, T_{1/2}}$$
-
-  where $T$ is the most recent period and $T_{1/2}$ is the half-life
-  parameter controlling the rate of decay. The most recent period always
-  has weight 1.
-- Explicit handling of items absent from a given period (`absent`
-  argument), relevant whenever the item universe changes across periods —
-  promotion and relegation being a natural example, demonstrated below.
-- A clean, pipe-friendly API separating data ingestion, model fitting and
-  result extraction into modular functions.
-
-This vignette demonstrates the full pipeline on a real dataset: 31 seasons
-of English Premier League results (1995/96–2025/26), chosen because its
-outcomes are independently verifiable against public record.
+This vignette's purpose is to document what each function does, what its
+arguments control, and what it returns — using 31 seasons of English
+Premier League results as a running example, because its outcomes are
+independently checkable. The football results themselves are illustration,
+not the subject.
 
 ## Installation
 
@@ -66,233 +51,288 @@ library(btrank)
 
 ## Input data format
 
-**btrank** expects a data frame with one row per item per period. The
-minimum required columns are:
+Every function in **btrank** starts from a data frame with one row per
+item per period:
 
 | Column | Description |
 |--------|-------------|
-| `item` | Item identifier (team, player, product, ...) |
+| `item` | Item identifier |
 | `period` | Period identifier (season, year, round, ...) |
 | `score` | Numeric metric used to rank items within each period |
 
-Column names are fully customisable via the `item_col`, `period_col` and
-`score_col` arguments. By default, higher values of `score` indicate better
-performance. Set `higher_is_better = FALSE` for metrics where lower is
-better (e.g. time, errors).
+Column names are configurable via `item_col`, `period_col`, `score_col`
+wherever they appear. By default higher `score` is better;
+`higher_is_better = FALSE` reverses this (e.g. for times or error counts).
 
 ## The EPL dataset
 
 ```{r load-data}
+data(epl_scores)
 dim(epl_scores)
-head(epl_scores, 8)
+head(epl_scores, 4)
 ```
 
-Each row is one team's aggregate record for one season: `points` (3/1/0 per
-win/draw/loss) and `goal_diff` (goals for minus goals against), both
-already in the `item`/`period`/`score` format `bt_win_matrix()` expects.
+`epl_scores` has one row per team per season (1995/96-2025/26): `points`
+(3/1/0) and `goal_diff`, already in `item`/`period`/`score` form.
 
 ## Data provenance and reproducibility
 
-Match results are sourced from
+Match results come from
 [football-data.co.uk](https://www.football-data.co.uk/englandm.php)
-(division "E0"). Raw match-level CSV files are **not** redistributed with
-this package, as their exact redistribution terms are not stated by the
-source; only the aggregated `epl_scores` table is shipped as package data.
-The aggregation itself — from raw match CSVs to `item`/`period`/`points`/
-`goal_diff` — is implemented in the internal, unit-tested function
-`.matches_to_scores()`, and the exact steps to regenerate `epl_scores` from
-the original source are documented in `data-raw/prepare_epl_scores.R`,
-included in the package source repository.
+(division "E0"). Raw match-level files are not redistributed with this
+package — only the aggregated `epl_scores` table is shipped. The
+aggregation itself is the internal, unit-tested function
+`.matches_to_scores()`; the exact steps to regenerate `epl_scores` from
+source are in `data-raw/prepare_epl_scores.R`.
 
-## Fitting the model: league points
+## Building the win matrix: `bt_win_matrix()`
 
-Following the same two-step workflow shown above:
+`bt_win_matrix()` converts item/period/score data into a matrix of
+pairwise win counts — the input `bt_fit()` needs. Within each period, it
+ranks items by `score` and records a win for the higher-ranked item over
+every lower-ranked item; exact ties split 0.5/0.5. Its arguments:
+
+- `item_col`, `period_col`, `score_col` — column names (defaults
+  `"item"`, `"period"`, `"score"`).
+- `higher_is_better` — direction of `score`.
+- `weights` — optional named vector/list, one weight per period, applied
+  to every comparison in that period (see `bt_weights()` below).
+- `absent` — how to treat an item missing from a period entirely (see
+  below). Used here as `"penalize"` throughout, except where `"ignore"`
+  is the explicit subject of a section.
+
+```{r win-matrix}
+win_mat_points <- bt_win_matrix(epl_scores, score_col = "points", absent = "penalize")
+dim(win_mat_points)
+win_mat_points["Man United", "Arsenal"]
+win_mat_points["Arsenal", "Man United"]
+```
+
+The matrix is not symmetric: entry `[i, j]` is the number of times `i`
+outranked `j`.
+
+## Fitting the model: `bt_fit()`
+
+`bt_fit()` takes a win-count matrix and fits the model via
+`BradleyTerry2::BTm()`, in two internal passes: an arbitrary reference is
+used first to identify the weakest item, then the model is re-fit with
+that item as reference, so every reported ability is $\geq 0$.
 
 ```{r fit-points}
-win_mat_points <- bt_win_matrix(epl_scores, score_col = "points")
-fit_points      <- bt_fit(win_mat_points)
+fit_points <- bt_fit(win_mat_points)
 print(fit_points)
-
-bt_rank(fit_points)[1:10, ]
 ```
 
-Across the full 31-season window, with no temporal weighting, the top of
-the table is Manchester United, Arsenal, Liverpool, Chelsea, Manchester
-City and Tottenham — the "big six" widely recognised in English football,
-recovered here purely from 31 years of season-aggregate points, with no
-football-specific knowledge built into the model.
+The returned `btfit` object is a list: `abilities` (named vector),
+`reference` (the anchor item), `items`, `model` (the underlying `BTm`
+fit, for advanced use), and `separation_items` — items that never won or
+never lost a single comparison, flagged automatically (see the
+Uncertainty section below for why this matters). Here `separation_items`
+is empty: even with `absent = "penalize"` applied over the full 31-year,
+49-team universe, every item retains at least one real win.
 
-The `ability_norm` column rescales the raw log-ability $\lambda_i$ to the
-$[0, 1]$ interval, mapping the weakest item in the set to 0 and the
-strongest to 1. Raw $\lambda_i$ values are not comparable across different
-model fits (their scale depends on the number of items, periods, and
-degree of separation between them); `ability_norm` is, making it the right
-column to use when comparing rankings from different fits, as done below.
+## Extracting a ranking: `bt_rank()`
 
-### Temporal weighting changes who leads
+```{r rank-points}
+bt_rank(fit_points)[1:6, ]
+```
 
-A flat, unweighted fit answers "who was strongest averaged over 31 years?".
-That is a different question from "who is strongest *now*?". Compare a flat
-fit against one with `half_life = 5`:
+`bt_rank()` returns `item`, `rank`, `ability` (raw $\lambda$), and
+`ability_norm` — a $[0, 1]$ rescaling (weakest $\to$ 0, strongest $\to$
+1). Because raw $\lambda$ is scale-dependent (it varies with the number
+of items, periods, and separation), `ability_norm` is the right column
+for comparing across different fits; `bt_rank(fit, top_n = k)` truncates
+to the top `k`.
 
-```{r weighted-fit}
-periods    <- sort(unique(epl_scores$period))
-w_recent   <- bt_weights(periods, half_life = 5)
+## Temporal weighting: `bt_weights()`
 
-win_mat_recent <- bt_win_matrix(epl_scores, score_col = "points", weights = w_recent)
-fit_recent      <- bt_fit(win_mat_recent)
+`bt_weights(periods, half_life)` returns exponential decay weights
+(Ley et al., 2019):
 
-rk_flat   <- bt_rank(fit_points)
-rk_recent <- bt_rank(fit_recent)
+$$w_t = \left(\tfrac{1}{2}\right)^{(T-t)/T_{1/2}}$$
+
+with $T$ the most recent period; the most recent period always has
+weight 1. The result is a named vector, passed directly to
+`bt_win_matrix(weights = ...)`.
+
+```{r weights}
+periods  <- sort(unique(epl_scores$period))
+w_recent <- bt_weights(periods, half_life = 5)
+
+fit_recent <- bt_fit(bt_win_matrix(epl_scores, score_col = "points",
+                                    weights = w_recent, absent = "penalize"))
 
 merge(
-  data.frame(item = rk_flat$item,   rank_flat   = rk_flat$rank),
-  data.frame(item = rk_recent$item, rank_recent = rk_recent$rank),
+  data.frame(item = names(fit_points$abilities), rank_flat = rank(-fit_points$abilities)),
+  data.frame(item = names(fit_recent$abilities), rank_recent = rank(-fit_recent$abilities)),
   by = "item"
-)
+) |> subset(item %in% c("Man City", "Man United"))
 ```
 
-Under `half_life = 5`, Manchester City moves from 5th to **1st**, and
-Manchester United drops from 1st to 4th — reflecting Manchester City's
-2017–2023 run of dominance against Manchester United's trophy-heavy but
-now more distant 1995–2013 record. This is precisely the effect
-[bt_weights()] is designed to capture, on data where the underlying
-football history is independently checkable.
+A shorter `half_life` weights recent periods more heavily; here it moves
+Manchester City from 6th to 1st and Manchester United from 1st to 4th —
+the mechanism, not a claim about football, is the point.
 
-## Fitting the model: goal difference
+## Multiple metrics
 
-Points is one lens on team strength; goal difference is another — it
-rewards margin of victory rather than just the win/draw/loss outcome. The
-same pipeline applies, only the `score_col` changes:
+Any numeric column works as `score_col` — nothing else changes:
 
 ```{r fit-goal-diff}
-win_mat_gd <- bt_win_matrix(epl_scores, score_col = "goal_diff")
-fit_gd      <- bt_fit(win_mat_gd)
+fit_gd <- bt_fit(bt_win_matrix(epl_scores, score_col = "goal_diff", absent = "penalize"))
 
-bt_rank(fit_gd)[1:10, ]
+cor(rank(-fit_points$abilities)[names(fit_gd$abilities)],
+    rank(-fit_gd$abilities), method = "spearman")
 ```
 
-### Where the two metrics agree, and where they don't
+The two rankings correlate at $\approx 0.997$ here — near-total
+agreement — yet even so, Arsenal ranks above Manchester United by goal
+difference but below it by points: both computed by the identical
+function, just a different column, capturing "who won more" versus "who
+dominated more."
 
-```{r compare-metrics}
-rk_points <- bt_rank(fit_points)
-rk_gd     <- bt_rank(fit_gd)
+## Handling absence
 
-cmp <- merge(
-  data.frame(item = rk_points$item, rank_points    = rk_points$rank),
-  data.frame(item = rk_gd$item,     rank_goal_diff = rk_gd$rank),
-  by = "item"
-)
-cmp <- cmp[order(cmp$rank_points), ]
+`bt_win_matrix()`'s `absent` argument controls items missing from a
+period entirely (promotion/relegation is the natural case): `"ignore"`
+(default) contributes nothing for missing periods; `"penalize"` credits
+every present item a win against each absent item, `absent_penalty`
+times per missing period (default `1`, one full loss). The rest of this
+vignette uses `"penalize"`; this section demonstrates why the choice
+matters, comparing both explicitly on a bounded, recent window.
 
-cor(cmp$rank_points, cmp$rank_goal_diff, method = "spearman")
-
-head(cmp, 15)
-```
-
-The two rankings agree closely overall (Spearman correlation ≈ 0.97) — the
-top six are the same set of clubs under either metric. But the *order*
-within that top six is not identical: Arsenal ranks 1st by goal difference
-but 2nd by points, while Manchester United is the reverse. Further down,
-Brentford ranks 7th by goal difference but only 11th by points — a team
-whose results were closer than their points tally alone suggests. Teams
-such as Charlton show the opposite pattern: a points total propped up by
-close, low-margin results loses ground once judged by goal difference
-(19th by points, 30th by goal difference). This is the intended effect of
-supporting multiple metrics: the two questions ("who won more?" and "who
-dominated more?") are related but not identical, and **btrank** lets the
-user ask either one from the same `item`/`period`/score` input.
-
-## Handling absence: promotion and relegation
-
-The full 31-season item universe includes teams that were only ever in the
-Premier League decades apart from each other. As `bt_win_matrix()`'s
-documentation notes, `absent` and the time window are linked: passing an
-unbounded window with `absent = "penalize"` accumulates structural losses
-for spans of absence that were never the intended comparison. This section
-therefore bounds the window to the five most recent seasons (2021–2025),
-where promotion and relegation are directly observable.
-
-```{r absent-setup}
+```{r absent}
 recent <- epl_scores[epl_scores$period %in% 2021:2025, ]
 
-# Teams present in fewer than all 5 of these seasons
-tab <- table(recent$item, recent$period)
-partial <- rowSums(tab > 0)
-partial[partial < 5]
+fit_ignore   <- bt_fit(bt_win_matrix(recent, score_col = "points", absent = "ignore"))
+fit_penalize <- bt_fit(bt_win_matrix(recent, score_col = "points",
+                                      absent = "penalize", absent_penalty = 1))
+
+rbind(
+  ignore   = rank(-fit_ignore$abilities)["Sunderland"],
+  penalize = rank(-fit_penalize$abilities)["Sunderland"]
+)
 ```
 
-### `absent = "ignore"` (default)
+Sunderland played one of these five seasons; under `"ignore"` its single
+season alone puts it 4th, ahead of Manchester United; under
+`"penalize"` it falls to 20th. Neither is a free default — `"ignore"`
+can let one strong season outweigh years of absence; `"penalize"`
+treats absence itself as informative, a modelling assumption that
+should be stated explicitly, not left implicit.
 
-```{r absent-ignore, warning = TRUE}
-win_mat_ignore <- bt_win_matrix(recent, score_col = "points", absent = "ignore")
-fit_ignore      <- bt_fit(win_mat_ignore)
+## Quantifying uncertainty: `summary.btfit()`, `confint.btfit()`, `vcov.btfit()`
 
-bt_rank(fit_ignore)[1:6, ]
+`bt_fit()`'s point estimates say nothing about precision. `vcov.btfit()`
+extracts the variance-covariance matrix of the fitted abilities (from
+`BTm()`'s underlying `glm()`); `summary.btfit(object, level = 0.95)`
+builds a table of `item`, `ability`, `se`, `ci_low`, `ci_high`, and
+`reliable`; `confint.btfit()` returns just the interval, `stats`-style.
+
+```{r summary}
+s <- summary(fit_points, level = 0.95)
+s$table[s$table$item %in% c("Man United", "Arsenal", "Liverpool", "Chelsea"), ]
 ```
 
-Fitting raises a separation warning for Norwich and Sheffield United — each
-played only one of these five seasons and lost every within-season
-comparison, so their ability estimate is a boundary point estimate with an
-unreliable standard error (see `?bt_fit`, Details).
+A concrete question this answers: is Liverpool's ability significantly
+different from Chelsea's? Their Wald intervals — [6.31, 7.25] and
+[6.21, 7.14] — overlap substantially; overlapping intervals do not
+prove "no difference" on their own (`bt_significance_matrix()` below
+tests this properly), but they immediately show the gap is small
+relative to the uncertainty, which the point estimates alone do not.
 
-More subtly, notice **Sunderland ranks 4th**, just behind Liverpool and
-ahead of Manchester United — despite having played only one of these five
-seasons (2024/25, their first back in the Premier League after several
-years in the Championship). Under `"ignore"`, an item's ability reflects
-only the periods it was observed in; the four seasons Sunderland was absent
-contribute nothing, positive or negative, to its estimate.
+`reliable` applies to the **whole fit**, not per item: `bt_fit()` fixes
+the *weakest* item as reference, and a never-winning item is almost
+always that weakest item, so a broken standard error for the reference
+propagates identically to every other item's SE (each is expressed
+relative to it). If any item is flagged in `separation_items`,
+`reliable` is `FALSE` for every row — reported, not silently omitted.
 
-### `absent = "penalize"`
+## Pairwise win probabilities: `bt_prob_matrix()`
 
-```{r absent-penalize}
-win_mat_penalize <- bt_win_matrix(recent, score_col = "points",
-                                   absent = "penalize", absent_penalty = 1)
-fit_penalize      <- bt_fit(win_mat_penalize)
-
-rank(-fit_penalize$abilities)["Sunderland"]
-fit_penalize$abilities["Sunderland"]
+```{r prob-matrix}
+pm <- bt_prob_matrix(fit_points)
+pm["Man United", "Arsenal"]
+pm["Man United", "Chelsea"]
 ```
 
-With every team present each season credited a structural win against
-Sunderland for the four seasons it was absent, Sunderland's ability drops
-sharply and its rank falls from 4th to **20th** — a considerably more
-defensible position given its actual top-flight record over this window.
+`bt_prob_matrix(fit, order_by = "ability")` returns an $n \times n$
+matrix where entry `[i, j]` is $P(i \text{ beats } j)$ under the fitted
+model, diagonal `NA`. `order_by = "name"` sorts alphabetically instead.
+Note this is a **model-implied** probability from the two abilities
+alone, not an empirical win rate.
 
-### Choosing between them
+## Pairwise significance testing: `bt_significance_matrix()`
 
-Neither setting is a free default: `"ignore"` can let a single strong
-season outweigh years of absence, as above; `"penalize"` treats absence
-itself as informative, which is a modelling assumption that should be
-stated, not left implicit (see `?bt_win_matrix`, `absent_penalty`). An
-alternative used elsewhere in the literature is to exclude teams without
-consistent presence across the window entirely (Liu, Battaglia & Wu, 2025)
-— a stricter but simpler choice than penalizing.
+`bt_significance_matrix(fit, level = 0.95, method = "holm")` runs a Wald
+test on every pairwise ability difference, using `vcov.btfit()` for the
+joint covariance (so correlation between two items' estimates is
+accounted for, not just their individual SEs). With $n$ items there are
+$n(n-1)/2$ simultaneous comparisons, so p-values are adjusted by
+default — `"holm"` (Holm, 1979), `"bonferroni"`, `"BH"`, or `"none"`
+(provided only for comparison; unadjusted p-values understate the true
+false-positive rate here). It returns `p`, `significant`, `method`,
+`level`, and the same fit-wide `reliable` flag as `summary.btfit()`.
+
+**Is the "big six" actually six distinguishable teams?** Refitting on
+just those six clubs (same two functions, restricted data — not a
+special case):
+
+```{r big-six}
+big6 <- c("Man United", "Arsenal", "Liverpool", "Chelsea", "Man City", "Tottenham")
+fit_big6 <- bt_fit(bt_win_matrix(epl_scores[epl_scores$item %in% big6, ],
+                                  score_col = "points", absent = "penalize"))
+
+sort(fit_big6$abilities, decreasing = TRUE)
+
+sig6 <- bt_significance_matrix(fit_big6)
+sig6
+```
+
+Of the 15 pairs, six are significant after Holm correction: Tottenham
+against each of the other five clubs (all $p < 0.02$), plus Manchester
+City vs. Manchester United ($p = 0.0105$). The remaining nine pairs —
+among Manchester United, Arsenal, Chelsea and Liverpool, and between
+Manchester City and each of those three — are not significant.
+Tottenham is reliably behind the group; Manchester City is reliably
+behind Manchester United specifically, but statistically
+indistinguishable from Arsenal, Chelsea or Liverpool. This is exactly
+the kind of claim a ranking table alone cannot support, and the reason
+`bt_significance_matrix()` exists as a separate step from `bt_rank()`.
+
+## Visualizing model fit: `plot.btfit()`
+
+`plot.btfit(x, level = 0.95, ...)` draws a caterpillar plot: one point
+per item (ability), one horizontal segment per item (Wald interval),
+ordered weakest-to-strongest; items in `separation_items` are drawn in
+grey rather than black. It is a thin wrapper around `graphics::plot()`
+using exactly the table `summary.btfit()` computes — no separate
+calculation.
+
+```{r plot-btfit, eval = FALSE}
+plot(fit_points)
+```
+
+Rendered figures are not included in this vignette; see the accompanying
+JSS manuscript for the visual output of this and the two matrix
+functions above.
 
 ## External validation: comparison with Elo
 
-Elo (Elo, 1978) is a widely used alternative rating system for paired
-comparisons, updated sequentially match by match rather than fit in a
-single batch. Because its underlying win-probability model is the same
-logistic form as Bradley-Terry, feeding an Elo rating into `btrank` as a
-`score_col` would compare a Bradley-Terry fit against a transformation of
-another Bradley-Terry-equivalent fit — not an independent check. Elo is
-therefore used here purely as an **external** point of comparison, computed
-entirely outside the `btrank` pipeline.
+This section is the one deliberate exception to using only
+**btrank** functions: its purpose is an independent check computed
+*outside* the package. Elo (Elo, 1978) shares the same logistic
+win-probability form as Bradley-Terry, so feeding an Elo rating into
+`btrank` as a `score_col` would compare a Bradley-Terry fit against a
+transformation of another Bradley-Terry-equivalent fit — not an
+independent check.
 
-Computing Elo requires match-level results in chronological order, which
-`epl_scores` does not retain (only season aggregates are shipped — see
-"Data provenance" above). The ratings below were computed once, with a
-standard implementation (starting rating 1500, $K = 20$, no home-advantage
-adjustment, sequential updates over all 11,780 matches from 1995/96 to
-2025/26 in date order); the script is included as
-`data-raw/compute_epl_elo.R` for reproducibility, and its output is
-embedded below rather than recomputed live in this vignette.
+Elo requires match-level results in chronological order, which
+`epl_scores` does not retain. The ratings below were computed once via
+`data-raw/compute_epl_elo.R` (starting rating 1500, $K=20$, no home
+advantage, sequential updates over 11,780 matches) and are embedded
+here rather than recomputed live.
 
 ```{r elo-comparison}
-# Final Elo rating (end of 2025/26), current 20 Premier League teams.
-# Computed via data-raw/compute_epl_elo.R; see that script for the full,
-# match-level reproduction from the original source.
 elo_final <- c(
   "Man City" = 1774.4, "Arsenal" = 1794.8, "Liverpool" = 1685.2,
   "Man United" = 1681.5, "Chelsea" = 1611.7, "Tottenham" = 1522.9,
@@ -303,157 +343,64 @@ elo_final <- c(
   "Leeds" = 1554.0, "Burnley" = 1411.3
 )
 
-rk_recent_named <- setNames(rk_recent$rank, rk_recent$item)
-
-cmp_elo <- data.frame(
-  item        = names(elo_final),
-  rank_btrank = rk_recent_named[names(elo_final)],
-  rank_elo    = rank(-elo_final)
-)
-cmp_elo <- cmp_elo[order(cmp_elo$rank_btrank), ]
-
-cor(cmp_elo$rank_btrank, cmp_elo$rank_elo, method = "spearman")
-
-cmp_elo
+cor(rank(-fit_recent$abilities)[names(elo_final)], rank(-elo_final), method = "spearman")
 ```
 
-The two independently-derived rankings agree closely (Spearman correlation
-≈ 0.80) among the 20 teams currently in the league, and agree almost
-exactly at the top: Manchester City and Arsenal occupy the top two
-positions under both methods (swapped), as do Liverpool and Manchester
-United in 3rd–4th. The clearest disagreement is Tottenham — 6th under
-`btrank`'s decayed points ranking but only 18th by Elo — a genuine
-divergence between a method built on season-aggregate results and one
-built on sequential match-by-match form, offered here as a limitation
-worth noting rather than resolved in favour of either.
-
+Spearman correlation $\approx 0.64$ among the 20 current teams —
+markedly lower than under `absent = "ignore"` weighting, since
+`"penalize"` and the sequential, form-sensitive nature of Elo respond
+very differently to a team's absence. Agreement at the very top still
+holds (Manchester City and Arsenal occupy the top two positions under
+both methods); the disagreement is concentrated further down the table.
+Offered as a limitation worth noting, not resolved in favour of either
+method.
 
 ## Relationship to BradleyTerry2
 
-**btrank** does not reimplement Bradley-Terry estimation: every model fit
-in this vignette is, underneath, a call to `BradleyTerry2::BTm()` (Turner &
-Firth, 2012). This section makes that explicit, and clarifies what
-`bt_win_matrix()` and `bt_fit()` add on top of it.
-
-### Same estimator, same numbers
-
-Given an already-built win count matrix, fitting "by hand" with
-`BradleyTerry2::BTm()` directly reproduces `bt_fit()`'s point estimates
-exactly:
+The second deliberate exception: demonstrating that `bt_fit()` is a
+faithful wrapper, not an alternative estimator, necessarily calls
+`BradleyTerry2::BTm()` directly.
 
 ```{r vs-bradleyterry2}
-# Manual replication of what bt_fit() does internally, using BradleyTerry2
-# directly, with no help from btrank beyond the win matrix already built.
 items <- rownames(win_mat_points)
 pairs <- combn(items, 2)
 df_manual <- data.frame(
-  item1 = factor(pairs[1, ], levels = items),
-  item2 = factor(pairs[2, ], levels = items),
+  item1 = factor(pairs[1, ], levels = items), item2 = factor(pairs[2, ], levels = items),
   wins1 = apply(pairs, 2, function(p) win_mat_points[p[1], p[2]]),
   wins2 = apply(pairs, 2, function(p) win_mat_points[p[2], p[1]])
 )
-
-fit_manual <- BradleyTerry2::BTm(
-  outcome = cbind(wins1, wins2), player1 = item1, player2 = item2,
-  data = df_manual
-)
+fit_manual <- BradleyTerry2::BTm(outcome = cbind(wins1, wins2), player1 = item1, player2 = item2, data = df_manual)
 
 ability_manual <- BradleyTerry2::BTabilities(fit_manual)[, 1]
 ability_btrank <- fit_points$abilities[names(ability_manual)]
-
-# BT abilities are identified only up to an additive constant: BTm() and
-# bt_fit() use different reference items by default (BTm() fixes the first
-# factor level; bt_fit() re-references to the weakest item). Put both on
-# the same baseline — any common item works — before comparing.
 common_ref <- names(ability_manual)[1]
-max(abs(
-  (ability_manual - ability_manual[common_ref]) -
-  (ability_btrank - ability_btrank[common_ref])
-))
+max(abs((ability_manual - ability_manual[common_ref]) - (ability_btrank - ability_btrank[common_ref])))
 ```
 
-The maximum difference, once both fits are placed on the same reference
-item, is at floating-point noise level: `bt_fit()` is a thin, faithful
-wrapper around `BTm()`, not an alternative estimator. (The two fits use
-different default reference items — `BTm()` fixes the first factor level,
-`bt_fit()` re-references to the weakest item — which is why comparing raw
-`abilities` vectors directly, without accounting for this, produces a
-constant, non-zero offset rather than agreement.)
-
-### What `BradleyTerry2` does not provide
-
-`BradleyTerry2::BTm()` takes a pairwise win count matrix as given — it has
-no notion of *deriving* one from repeated, dated observations of a metric.
-Everything upstream of `win_mat_points` in this vignette has no equivalent
-in `BradleyTerry2`:
-
-- **Turning season-level scores into comparisons.** `bt_win_matrix()`
-  converts one row per item per period into the pairwise structure `BTm()`
-  needs. Without it, a user would derive round-robin comparisons from raw
-  scores by hand for every dataset.
-- **Temporal decay.** `bt_weights()` and the `weights` argument of
-  `bt_win_matrix()` are what produced the Manchester City / Manchester
-  United reordering shown earlier. `BradleyTerry2` has no period concept
-  and no decay mechanism; every comparison is treated as equally
-  informative regardless of when it occurred.
-- **Structural handling of absence.** The `absent` argument — demonstrated
-  above with Sunderland — has no counterpart in `BradleyTerry2`; a
-  promoted or relegated item is simply missing rows, silently.
-- **Separation-aware uncertainty quantification.** `summary.btfit()`,
-  `confint.btfit()` and `bt_significance_matrix()` build on `BTm()`'s own
-  `glm()` machinery, but add automatic detection of quasi-complete
-  separation (as with Norwich and Sheffield United above) and flag which
-  standard errors and pairwise tests should not be trusted as a result —
-  a check `BradleyTerry2` leaves entirely to the user.
-
-**btrank**'s contribution is this layer: a data pipeline and safety checks
-built around `BradleyTerry2`'s estimator, not a replacement for it.
-
+At floating-point noise, once both fits share a reference (`BTm()`
+fixes the first factor level; `bt_fit()` re-references to the weakest
+item — comparing raw abilities without accounting for this produces a
+constant, non-zero offset, not disagreement). What `btrank` adds on top
+of `BradleyTerry2` is the layer documented above: deriving comparisons
+from repeated scores (`bt_win_matrix()`), temporal decay
+(`bt_weights()`), structural absence handling (`absent`), and
+separation-aware uncertainty (`summary.btfit()`,
+`bt_significance_matrix()`) — none of which `BradleyTerry2` provides.
 
 ## Limitations
 
-This vignette demonstrates the pipeline on real data with results that are
-independently checkable, but several modelling choices made along the way
-are worth stating explicitly rather than leaving implicit.
-
-- **Standard errors are not overdispersion-corrected.** `bt_fit()`'s
-  uncertainty quantification relies on `BTm()`'s underlying `glm()`
-  machinery, which assumes each recorded comparison is independent. The
-  comparisons `bt_win_matrix()` generates are round-robin-derived from a
-  single season-aggregate score per item per period, not independent
-  observations in the strict sense — closer in spirit to Turner & Firth's
-  (2012, Section 9.1) tie-splitting device than to genuinely independent
-  Bernoulli trials. Standard errors reported by `summary.btfit()` and
-  `confint.btfit()` should therefore be read as approximate, and are most
-  useful as a relative guide (which differences are large versus small)
-  rather than as calibrated interval estimates.
-
-- **`half_life` is a modelling choice, not an estimated quantity.**
-  `half_life = 5` was chosen above to illustrate the effect of temporal
-  weighting; nothing in the data selects that value over `half_life = 3`
-  or `half_life = 8`. As with `absent_penalty` (see `?bt_win_matrix`),
-  results should be checked across a range of values rather than reported
-  from a single choice.
-
-- **No home advantage term.** Both `points` and `goal_diff` are
-  season-level aggregates that already mix home and away results, but
-  neither `bt_win_matrix()` nor `bt_fit()` models home advantage
-  explicitly as a separate effect, unlike extended Bradley-Terry
-  approaches built for this purpose (e.g. Liu, Battaglia & Wu, 2025).
-
-- **Quasi-complete separation is flagged, not resolved.** As shown with
-  Norwich and Sheffield United, `bt_fit()` reports which items have
-  unreliable standard errors; it does not apply a penalised or
-  bias-reduced estimator (e.g. Firth's correction) to fix the underlying
-  problem. The point estimate for a separated item is still usable, its
-  associated uncertainty is not.
-
-- **Season-level aggregation discards match-level structure.** Ranking is
-  based on one score per item per period, not on the individual matches
-  behind it. This is a deliberate trade-off — it is what makes temporal
-  decay across periods well-defined — but it means, for instance, that two
-  teams finishing a season with identical points are treated as tied
-  regardless of how they arrived there.
+- **Standard errors are not overdispersion-corrected.** Comparisons
+  are round-robin-derived from a single season-aggregate score, not
+  independent Bernoulli trials in the strict sense; SEs should be read
+  as approximate.
+- **`half_life` is a modelling choice**, not estimated — results should
+  be checked across a range, not reported from one value.
+- **No home advantage term.**
+- **Separation is flagged, not corrected** — no bias-reduced estimator
+  (e.g. Firth's correction) is applied.
+- **Season-level aggregation discards match-level structure** — two
+  teams finishing level on points are tied regardless of how they got
+  there.
 
 ## References
 
@@ -464,20 +411,23 @@ Turner, H., & Firth, D. (2012). Bradley-Terry models in R: The BradleyTerry2
 package. *Journal of Statistical Software*, 48(9), 1–21.
 https://doi.org/10.18637/jss.v048.i09
 
-Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019).
-Ranking soccer teams on the basis of their current strength: A comparison
-of maximum likelihood approaches. *Statistical Modelling*, 19(1), 55-77.
+Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019). Ranking soccer teams
+on the basis of their current strength: A comparison of maximum likelihood
+approaches. *Statistical Modelling*, 19(1), 55–77.
+
+Holm, S. (1979). A simple sequentially rejective multiple test procedure.
+*Scandinavian Journal of Statistics*, 6(2), 65–70.
 
 Liu, H. H., Battaglia, J., & Wu, T. T. (2025). Impact of COVID-19 on
 English Football Premier League: Analyzing rankings and home advantage
 using extended Bradley-Terry models. *PLOS One*, 20(10), e0332627.
 https://doi.org/10.1371/journal.pone.0332627
 
+Firth, D. (1993). Bias reduction of maximum likelihood estimates.
+*Biometrika*, 80(1), 27–38.
+
 Elo, A. E. (1978). *The Rating of Chessplayers, Past and Present*. Arco
 Publishing, New York.
 
 football-data.co.uk. English Premier League results, 1995/96–2025/26.
 https://www.football-data.co.uk/englandm.php
-
-Firth, D. (1993). Bias reduction of maximum likelihood estimates.
-*Biometrika*, 80(1), 27–38.
