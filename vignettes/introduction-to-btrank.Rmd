@@ -20,9 +20,8 @@ knitr::opts_chunk$set(
 
 ## Overview
 
-**btrank** estimates latent ability scores from paired comparison data using
-the Bradley-Terry model (Bradley & Terry, 1952). Each item $i$ has a latent
-ability $\lambda_i$; for two items $i, j$:
+**btrank** is built on the Bradley-Terry model (Bradley & Terry, 1952), a probabilistic model for paired comparisons. Each item $i$ is assigned a latent ability $\lambda_i$, a parameter that is not observed directly but
+inferred from the outcomes of comparisons between items. The probability that $i$ beats $j$ depends only on the difference between their abilities:
 
 $$P(i \text{ beats } j) = \frac{e^{\lambda_i}}{e^{\lambda_i} + e^{\lambda_j}}$$
 
@@ -94,13 +93,25 @@ every lower-ranked item; exact ties split 0.5/0.5. Its arguments:
 
 - `item_col`, `period_col`, `score_col` — column names (defaults
   `"item"`, `"period"`, `"score"`).
-- `higher_is_better` — direction of `score`.
-- `weights` — optional named vector/list, one weight per period, applied
-  to every comparison in that period (see `bt_weights()` below).
-- `absent` — how to treat an item missing from a period entirely (see
-  below). Used here as `"penalize"` throughout, except where `"ignore"`
-  is the explicit subject of a section.
-
+- `higher_is_better` — direction of `score`. With `TRUE` (the default) the
+  item with the larger score in a period wins the comparison; with `FALSE`
+  the smaller score wins, as is appropriate for lap times or error counts.
+  Items with exactly equal scores in a period split the comparison 0.5/0.5.
+- `weights` — optional named vector (or list) with one weight per period,
+  keyed by the period value. Every comparison generated within period $t$
+  is counted with weight $w_t$ instead of 1, so that some periods
+  contribute more evidence than others. The weights are typically produced
+  by `bt_weights()` (see below); the resulting win counts are then no
+  longer integers.
+- `absent` — how to treat an item that does not appear in a period at all
+  (for instance, a team that was not in the league that season). With
+  `"ignore"` (the default) such an item simply takes no part in that
+  period. With `"penalize"`, every item present in the period is
+  additionally credited `absent_penalty` wins (default 1) over each item
+  absent from it; no comparison is generated between two absent items.
+  When `weights` are supplied, this credit is scaled by the weight of the
+  period. This vignette uses `"penalize"` throughout, except in the section
+  devoted to comparing both options.
 ```{r win-matrix}
 win_mat_points <- bt_win_matrix(epl_scores, score_col = "points", absent = "penalize")
 dim(win_mat_points)
@@ -312,54 +323,12 @@ calculation.
 plot(fit_points)
 ```
 
-Rendered figures are not included in this vignette; see the accompanying
-JSS manuscript for the visual output of this and the two matrix
-functions above.
-
-## External validation: comparison with Elo
-
-This section is the one deliberate exception to using only
-**btrank** functions: its purpose is an independent check computed
-*outside* the package. Elo (Elo, 1978) shares the same logistic
-win-probability form as Bradley-Terry, so feeding an Elo rating into
-`btrank` as a `score_col` would compare a Bradley-Terry fit against a
-transformation of another Bradley-Terry-equivalent fit — not an
-independent check.
-
-Elo requires match-level results in chronological order, which
-`epl_scores` does not retain. The ratings below were computed once via
-`data-raw/compute_epl_elo.R` (starting rating 1500, $K=20$, no home
-advantage, sequential updates over 11,780 matches) and are embedded
-here rather than recomputed live.
-
-```{r elo-comparison}
-elo_final <- c(
-  "Man City" = 1774.4, "Arsenal" = 1794.8, "Liverpool" = 1685.2,
-  "Man United" = 1681.5, "Chelsea" = 1611.7, "Tottenham" = 1522.9,
-  "Aston Villa" = 1667.8, "Newcastle" = 1599.4, "Brentford" = 1606.5,
-  "Brighton" = 1615.0, "Bournemouth" = 1648.1, "Everton" = 1575.4,
-  "West Ham" = 1538.9, "Crystal Palace" = 1571.8, "Fulham" = 1587.1,
-  "Sunderland" = 1549.6, "Nott'm Forest" = 1580.6, "Wolves" = 1457.4,
-  "Leeds" = 1554.0, "Burnley" = 1411.3
-)
-
-cor(rank(-fit_recent$abilities)[names(elo_final)], rank(-elo_final), method = "spearman")
-```
-
-Spearman correlation $\approx 0.64$ among the 20 current teams —
-markedly lower than under `absent = "ignore"` weighting, since
-`"penalize"` and the sequential, form-sensitive nature of Elo respond
-very differently to a team's absence. Agreement at the very top still
-holds (Manchester City and Arsenal occupy the top two positions under
-both methods); the disagreement is concentrated further down the table.
-Offered as a limitation worth noting, not resolved in favour of either
-method.
 
 ## Relationship to BradleyTerry2
 
-The second deliberate exception: demonstrating that `bt_fit()` is a
-faithful wrapper, not an alternative estimator, necessarily calls
-`BradleyTerry2::BTm()` directly.
+`bt_fit()` does not implement its own estimator: it calls
+`BradleyTerry2::BTm()` internally. To check this, the chunk below fits the
+same win matrix directly with `BTm()` and compares the two sets of abilities.
 
 ```{r vs-bradleyterry2}
 items <- rownames(win_mat_points)
@@ -377,30 +346,53 @@ common_ref <- names(ability_manual)[1]
 max(abs((ability_manual - ability_manual[common_ref]) - (ability_btrank - ability_btrank[common_ref])))
 ```
 
-At floating-point noise, once both fits share a reference (`BTm()`
-fixes the first factor level; `bt_fit()` re-references to the weakest
-item — comparing raw abilities without accounting for this produces a
-constant, non-zero offset, not disagreement). What `btrank` adds on top
-of `BradleyTerry2` is the layer documented above: deriving comparisons
-from repeated scores (`bt_win_matrix()`), temporal decay
-(`bt_weights()`), structural absence handling (`absent`), and
-separation-aware uncertainty (`summary.btfit()`,
-`bt_significance_matrix()`) — none of which `BradleyTerry2` provides.
+The largest difference is of the order of $10^{-15}$, that is, zero up to
+rounding error. One detail is needed for the comparison: abilities are only
+defined relative to a reference item whose ability is set to 0. `BTm()` uses
+the first item, while `bt_fit()` uses the weakest. Both fits are therefore
+shifted to a common reference before comparing; without that step the two
+sets of values differ by a constant, even though they describe the same model.
+
+What **btrank** adds is everything around the estimator:
+
+- building the comparisons from repeated scores (`bt_win_matrix()`);
+- temporal weighting (`bt_weights()`);
+- handling of items absent from a period (`absent`);
+- warnings when standard errors are unreliable because of separation, and
+  pairwise significance tests with multiplicity correction
+  (`summary.btfit()`, `bt_significance_matrix()`).
+
 
 ## Limitations
 
-- **Standard errors are not overdispersion-corrected.** Comparisons
-  are round-robin-derived from a single season-aggregate score, not
-  independent Bernoulli trials in the strict sense; SEs should be read
-  as approximate.
-- **`half_life` is a modelling choice**, not estimated — results should
-  be checked across a range, not reported from one value.
-- **No home advantage term.**
-- **Separation is flagged, not corrected** — no bias-reduced estimator
-  (e.g. Firth's correction) is applied.
-- **Season-level aggregation discards match-level structure** — two
-  teams finishing level on points are tied regardless of how they got
-  there.
+## Limitations
+
+The following simplifications are known, and are the main directions for
+further development.
+
+- **Standard errors.** They rely on the binomial model underlying `BTm()`,
+  which treats every comparison as an independent trial. Comparisons
+  derived from the same period's ranking are not independent, and no
+  overdispersion correction is applied, so standard errors and p-values
+  should be read as approximate. A quasi-likelihood correction is a natural
+  extension.
+- **Temporal weighting.** `half_life` is chosen by the user, not estimated,
+  and the resulting rankings depend on it (see the section on temporal
+  weighting). Results should be checked over a range of values; selecting it
+  from the data, for instance by predictive validation, is left for future
+  work.
+- **Home advantage.** The model has no home-advantage parameter. With
+  season-level scores its effect largely cancels out, since every team plays
+  the same number of home and away matches, but it would matter for
+  match-level data, which the package does not yet accept.
+- **Separation.** Items that never win or never lose are flagged, but their
+  estimates are not corrected. A bias-reduced estimator such as Firth's
+  (1993) is a natural next step.
+- **Aggregation.** Only the order of scores within each period is used, not
+  the individual matches or the size of the gaps between scores: winning a
+  league by twenty points counts the same as winning it by one. This is what
+  keeps weighting across periods well defined, but it discards information;
+  accepting match-level input is a natural next step.
 
 ## References
 
