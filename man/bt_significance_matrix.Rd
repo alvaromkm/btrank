@@ -7,7 +7,8 @@
 bt_significance_matrix(
   fit,
   level = 0.95,
-  method = c("holm", "bonferroni", "BH", "none")
+  method = c("holm", "bonferroni", "BH", "none"),
+  type = NULL
 )
 }
 \arguments{
@@ -23,6 +24,9 @@ threshold \code{alpha = 1 - level} for the \code{significant} matrix. Default
 provided for comparison only; reporting unadjusted pairwise p-values as
 if they were independent tests understates the true false-positive
 rate and is not recommended.}
+
+\item{type}{Standard error type, passed to \code{\link[=vcov.btfit]{vcov.btfit()}}. \code{NULL}
+(default) selects the cluster-robust estimate when available.}
 }
 \value{
 An object of class \code{"bt_significance_matrix"}, a list containing:
@@ -32,6 +36,10 @@ An object of class \code{"bt_significance_matrix"}, a list containing:
 \code{p < 1 - level}, diagonal \code{NA}.}
 \item{\code{method}}{The adjustment method used.}
 \item{\code{level}}{The confidence level used.}
+\item{\code{type}}{Standard error type used (\code{"cluster"} or \code{"model"}).}
+\item{\code{df}}{Degrees of freedom of the reference t distribution
+(\code{Inf} means normal).}
+\item{\code{non_estimable}}{Items whose pairs are \code{NA} (see Details).}
 \item{\code{reliable}}{Single logical. \code{FALSE} if \code{fit$separation_items} is
 non-empty, in which case no p-value in this matrix is meaningful
 (see \code{\link[=summary.btfit]{summary.btfit()}} Details for why this is a fit-wide, not
@@ -41,7 +49,8 @@ per-item, concern).}
 \description{
 For every pair of items, tests whether their estimated abilities differ
 significantly, using a Wald test on the difference \code{ability_i - ability_j}
-and the joint variance-covariance matrix from \code{\link[=vcov.btfit]{vcov.btfit()}}. With more
+and the joint variance-covariance matrix from \code{\link[=vcov.btfit]{vcov.btfit()}} (by default
+cluster-robust). With more
 than two items this involves multiple simultaneous comparisons, so
 p-values are adjusted by default (see \code{method}).
 }
@@ -54,6 +63,16 @@ variance and its covariance with every other item are exactly 0 - not an
 approximation. This is implemented by embedding \code{\link[=vcov.btfit]{vcov.btfit()}}'s
 (n-1) x (n-1) matrix into a full n x n matrix with a zero row/column for
 the reference, so no special-casing is needed in the comparison formula.
+The variance of a difference does not depend on which item is the
+reference, so these tests are exact with respect to that choice.
+
+Pairs involving an item whose uncertainty cannot be estimated (see
+\code{non_estimable} in \code{\link[=vcov.btfit]{vcov.btfit()}}) get \code{NA} and are excluded from the
+multiplicity adjustment.
+
+The test statistic is referred to a t distribution with \code{df} degrees of
+freedom (\eqn{G - 1} for cluster-robust errors with \eqn{G} clusters)
+or to the normal distribution for model-based errors.
 
 As with \code{\link[=summary.btfit]{summary.btfit()}}, the underlying Wald test breaks down under
 quasi-complete separation (see \code{\link[=bt_fit]{bt_fit()}} Details): p-values can be
@@ -61,13 +80,10 @@ misleadingly large due to the Hauck-Donner effect. \code{reliable} surfaces
 this rather than silently reporting numbers.
 }
 \examples{
-data <- data.frame(
-  item   = c("A", "B", "C", "A", "B", "C"),
-  period = c(2021, 2021, 2021, 2022, 2022, 2022),
-  score  = c(80, 70, 60, 65, 85, 55)
-)
-mat <- bt_win_matrix(data, score_col = "score")
-fit <- bt_fit(mat)
+set.seed(1)
+data <- data.frame(item = rep(LETTERS[1:5], 10), period = rep(1:10, each = 5))
+data$score <- rep(c(3, 2.25, 1.5, 0.75, 0), 10) + rnorm(50)
+fit <- bt_fit(bt_win_matrix(data))
 bt_significance_matrix(fit)
 
 }

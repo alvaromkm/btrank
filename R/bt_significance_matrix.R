@@ -2,7 +2,8 @@
 #'
 #' For every pair of items, tests whether their estimated abilities differ
 #' significantly, using a Wald test on the difference `ability_i - ability_j`
-#' and the joint variance-covariance matrix from [vcov.btfit()]. With more
+#' and the joint variance-covariance matrix from [vcov.btfit()] (by default
+#' cluster-robust). With more
 #' than two items this involves multiple simultaneous comparisons, so
 #' p-values are adjusted by default (see `method`).
 #'
@@ -16,6 +17,8 @@
 #'   provided for comparison only; reporting unadjusted pairwise p-values as
 #'   if they were independent tests understates the true false-positive
 #'   rate and is not recommended.
+#' @param type Standard error type, passed to [vcov.btfit()]. `NULL`
+#'   (default) selects the cluster-robust estimate when available.
 #'
 #' @return An object of class `"bt_significance_matrix"`, a list containing:
 #' \describe{
@@ -24,6 +27,10 @@
 #'     `p < 1 - level`, diagonal `NA`.}
 #'   \item{`method`}{The adjustment method used.}
 #'   \item{`level`}{The confidence level used.}
+#'   \item{`type`}{Standard error type used (`"cluster"` or `"model"`).}
+#'   \item{`df`}{Degrees of freedom of the reference t distribution
+#'     (`Inf` means normal).}
+#'   \item{`non_estimable`}{Items whose pairs are `NA` (see Details).}
 #'   \item{`reliable`}{Single logical. `FALSE` if `fit$separation_items` is
 #'     non-empty, in which case no p-value in this matrix is meaningful
 #'     (see [summary.btfit()] Details for why this is a fit-wide, not
@@ -40,6 +47,16 @@
 #' approximation. This is implemented by embedding [vcov.btfit()]'s
 #' (n-1) x (n-1) matrix into a full n x n matrix with a zero row/column for
 #' the reference, so no special-casing is needed in the comparison formula.
+#' The variance of a difference does not depend on which item is the
+#' reference, so these tests are exact with respect to that choice.
+#'
+#' Pairs involving an item whose uncertainty cannot be estimated (see
+#' `non_estimable` in [vcov.btfit()]) get `NA` and are excluded from the
+#' multiplicity adjustment.
+#'
+#' The test statistic is referred to a t distribution with `df` degrees of
+#' freedom (\eqn{G - 1} for cluster-robust errors with \eqn{G} clusters)
+#' or to the normal distribution for model-based errors.
 #'
 #' As with [summary.btfit()], the underlying Wald test breaks down under
 #' quasi-complete separation (see [bt_fit()] Details): p-values can be
@@ -47,22 +64,20 @@
 #' this rather than silently reporting numbers.
 #'
 #' @examples
-#' data <- data.frame(
-#'   item   = c("A", "B", "C", "A", "B", "C"),
-#'   period = c(2021, 2021, 2021, 2022, 2022, 2022),
-#'   score  = c(80, 70, 60, 65, 85, 55)
-#' )
-#' mat <- bt_win_matrix(data, score_col = "score")
-#' fit <- bt_fit(mat)
+#' set.seed(1)
+#' data <- data.frame(item = rep(LETTERS[1:5], 10), period = rep(1:10, each = 5))
+#' data$score <- rep(c(3, 2.25, 1.5, 0.75, 0), 10) + rnorm(50)
+#' fit <- bt_fit(bt_win_matrix(data))
 #' bt_significance_matrix(fit)
 #'
 #' @seealso [vcov.btfit()] for the underlying covariance matrix,
 #'   [summary.btfit()] for per-item standard errors and confidence intervals.
 #'
-#' @importFrom stats pnorm p.adjust
+#' @importFrom stats pnorm pt p.adjust
 #' @export
 bt_significance_matrix <- function(fit, level = 0.95,
-                                   method = c("holm", "bonferroni", "BH", "none")) {
+                                   method = c("holm", "bonferroni", "BH", "none"),
+                                   type = NULL) {
   if (!inherits(fit, "btfit")) {
     stop("`fit` must be a `btfit` object returned by `bt_fit()`.", call. = FALSE)
   }
@@ -75,23 +90,26 @@ bt_significance_matrix <- function(fit, level = 0.95,
   n     <- length(items)
   ab    <- fit$abilities[items]
   
-  # ── Embed vcov.btfit()'s (n-1) x (n-1) matrix into a full n x n matrix ────
-  # with an exact zero row/column for the reference item (fixed at 0 by
-  # construction: zero variance, zero covariance with everything else).
-  v_full <- matrix(0, n, n, dimnames = list(items, items))
-  v_sub  <- vcov(fit)
-  v_full[rownames(v_sub), colnames(v_sub)] <- v_sub
+  # ── Full n x n covariance, with an exact zero row/column for the ─────────
+  # reference item (fixed at 0 by construction).
+  inf    <- .bt_inference(fit, type)
+  v_full <- inf$vcov_full[items, items]
   
   # ── Pairwise variance of ability differences ──────────────────────────────
-  var_diff <- outer(items, items, Vectorize(function(i, j) {
-    v_full[i, i] + v_full[j, j] - 2 * v_full[i, j]
-  }))
-  dimnames(var_diff) <- list(items, items)
+  d        <- diag(v_full)
+  var_diff <- outer(d, d, "+") - 2 * v_full
   
   diff_ab <- outer(ab, ab, "-")
-  z <- diff_ab / sqrt(var_diff)
-  p_raw <- 2 * stats::pnorm(-abs(z))
+  stat    <- diff_ab / sqrt(var_diff)
+  p_raw   <- if (is.finite(inf$df)) {
+    2 * stats::pt(-abs(stat), df = inf$df)
+  } else {
+    2 * stats::pnorm(-abs(stat))
+  }
   diag(p_raw) <- NA_real_
+  ne <- intersect(inf$non_estimable, items)
+  p_raw[ne, ] <- NA_real_
+  p_raw[, ne] <- NA_real_
   
   # ── Multiple comparison adjustment (upper triangle, then mirrored) ───────
   p_adj <- p_raw
@@ -111,6 +129,9 @@ bt_significance_matrix <- function(fit, level = 0.95,
       significant = significant,
       method      = method,
       level       = level,
+      type        = inf$type,
+      df          = inf$df,
+      non_estimable = inf$non_estimable,
       reliable    = length(fit$separation_items) == 0
     ),
     class = "bt_significance_matrix"
@@ -127,10 +148,20 @@ bt_significance_matrix <- function(fit, level = 0.95,
 print.bt_significance_matrix <- function(x, digits = 4, ...) {
   cat("Bradley-Terry pairwise significance matrix\n")
   cat("  Adjustment method:", x$method, "\n")
+  if (x$type == "cluster") {
+    cat(sprintf("  Standard errors: cluster-robust; t reference with %d df\n",
+                as.integer(x$df)))
+  } else {
+    cat("  Standard errors: model-based; normal reference\n")
+  }
   cat(sprintf("  Significance level (alpha): %.3g\n\n", 1 - x$level))
   cat("p-values:\n")
   print(round(x$p, digits))
   
+  if (length(x$non_estimable) > 0) {
+    cat("\nNote: pairs involving item(s) present in a single cluster are NA",
+        "(see `?vcov.btfit`):", paste(x$non_estimable, collapse = ", "), "\n")
+  }  
   if (!x$reliable) {
     cat(
       "\nWarning: this fit has quasi-complete separation.",
