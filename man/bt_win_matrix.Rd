@@ -12,11 +12,14 @@ bt_win_matrix(
   higher_is_better = TRUE,
   weights = NULL,
   absent = c("ignore", "penalize"),
-  absent_penalty = 1
+  absent_penalty = 1,
+  cluster_col = NULL,
+  time_col = NULL
 )
 }
 \arguments{
-\item{data}{A data frame with one row per item per period. Must contain
+\item{data}{A data frame with at most one row per item per period
+(block). Must contain
 at least the columns specified in \code{item_col}, \code{period_col}, and
 \code{score_col}.}
 
@@ -33,10 +36,10 @@ determine winners within each period. Character string. Default: \code{"score"}.
 \code{score_col} indicate a better outcome (e.g. points, goals, ratings).
 Set to \code{FALSE} for metrics where lower is better (e.g. time, errors).}
 
-\item{weights}{An optional named numeric vector of period weights, where
-names match values in \code{period_col}. If \code{NULL} (default), all periods
-receive equal weight of 1. Use \code{\link[=bt_weights]{bt_weights()}} to generate exponential
-decay weights.}
+\item{weights}{An optional named numeric vector of weights, where names
+match values in \code{time_col} (by default, \code{period_col}). If \code{NULL}
+(default), all periods receive equal weight of 1. Use \code{\link[=bt_weights]{bt_weights()}} to
+generate exponential decay weights.}
 
 \item{absent}{Character. How to treat items that belong to the item
 universe (all items appearing anywhere in \code{data}) but have no row, or
@@ -65,13 +68,40 @@ the likelihood even though they are not observed data. There is no
 principled default threshold for \code{absent_penalty}; report results
 under a range of values (sensitivity analysis) rather than a single
 fixed choice.}
+
+\item{cluster_col}{Optional name of the column identifying the
+independent units used for variance estimation (see Details). If
+\code{NULL} (default), each period is its own cluster. Must be constant
+within each period.}
+
+\item{time_col}{Optional name of the column whose values are matched to
+the names of \code{weights}. If \code{NULL} (default), \code{period_col} is used. Needed
+when periods are not time units (e.g. one period per match, weighted by
+season). Must be constant within each period.}
 }
 \value{
-A square numeric matrix of dimension n_items × n_items, where
+An object of class \code{"bt_win_matrix"}: a square numeric matrix
+(it inherits from \code{"matrix"}) of dimension n_items × n_items, where
 entry \verb{[i, j]} is the (possibly weighted) number of periods in which
 item \code{i} outperformed item \code{j} — including, when \code{absent = "penalize"},
 structural wins credited against items absent that period. Row and
 column names are item identifiers.
+
+The matrix carries an attribute \code{"comparisons"}: a data frame with one
+row per pairwise comparison that contributes to the matrix, with
+columns \code{item1}, \code{item2} (character), \code{y} (outcome for \code{item1}: \code{1} for
+a win, \code{0.5} for a tie), \code{period} (as in \code{period_col}), \code{cluster}
+(as in \code{cluster_col}, or \code{period} if not supplied), \code{weight}
+(the row's contribution to the counts: the period weight, multiplied
+by \code{absent_penalty} for structural rows) and \code{structural} (logical,
+\code{TRUE} for rows created by \code{absent = "penalize"}). Rows with zero
+weight are omitted. The matrix is exactly the weighted aggregation of
+these rows. This period-level record is what allows \code{\link[=bt_fit]{bt_fit()}} and
+its methods to compute standard errors that account for the
+dependence between comparisons derived from the same period. The
+attribute is dropped by subsetting (e.g. \code{mat[1:3, 1:3]}); a matrix
+without it can still be fitted, but only model-based standard errors
+are then available.
 }
 \description{
 For each pair of items and each period, records which item ranked higher
@@ -93,6 +123,9 @@ why an item is missing from a period. \code{absent = "penalize"} encodes a
 specific modelling choice — that absence itself is informative (e.g.
 relegation from a league) — and should be selected and justified
 explicitly, not left as an implicit default. For contrast, Liu,
+It only makes sense when every period is a full participation unit
+(e.g. a league season). With one period per match or per consumer,
+every item not in that period would be penalized.
 Battaglia & Wu (2025, \emph{PLOS One}) handle the same promotion/relegation
 scenario in the English Premier League by excluding teams without
 consistent presence across the full period, rather than penalizing
@@ -101,6 +134,25 @@ their absence.
 Both \code{weights} and \code{absent_penalty} can produce non-integer entries in
 the returned matrix. See the Details section of \code{\link[=bt_fit]{bt_fit()}} for how this
 interacts with the underlying \code{glm()} fit.
+
+\strong{Periods as comparison blocks.} A "period" is any block within which
+scores are comparable: a season (items = teams, score = points), a
+single match (two rows, score = goals), a consumer (items = products,
+score = rating) or a judge (items = wines, score = mark). Scores are
+never compared across periods, so each item may appear at most once per
+period; duplicated item-period rows are an error. For example, ratings
+from several consumers must use the consumer, not the month, as
+\code{period_col}.
+
+\strong{Clusters.} All pairwise comparisons derived from the same period are
+functions of a single vector of scores and are therefore not
+independent (e.g. if item \code{i} finishes first, it beats every other item
+that period). The \code{"comparisons"} attribute records the cluster of every
+comparison so that downstream variance estimation can treat clusters as
+the independent units. By default each period is a cluster. Supply
+\code{cluster_col} when several periods share a source of dependence, e.g.
+one period per pairwise judgement but many judgements per respondent
+(\code{cluster_col = "respondent"}).
 }
 \examples{
 # Simple example: three teams over two seasons

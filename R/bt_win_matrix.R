@@ -5,7 +5,8 @@
 #' comparisons into a win count matrix suitable for Bradley-Terry estimation.
 #' Ties are split as 0.5 wins each.
 #'
-#' @param data A data frame with one row per item per period. Must contain
+#' @param data A data frame with at most one row per item per period
+#'   (block). Must contain
 #'   at least the columns specified in `item_col`, `period_col`, and
 #'   `score_col`.
 #' @param item_col Name of the column identifying items (e.g. teams, wines,
@@ -17,10 +18,10 @@
 #' @param higher_is_better Logical. If `TRUE` (default), higher values of
 #'   `score_col` indicate a better outcome (e.g. points, goals, ratings).
 #'   Set to `FALSE` for metrics where lower is better (e.g. time, errors).
-#' @param weights An optional named numeric vector of period weights, where
-#'   names match values in `period_col`. If `NULL` (default), all periods
-#'   receive equal weight of 1. Use [bt_weights()] to generate exponential
-#'   decay weights.
+#' @param weights An optional named numeric vector of weights, where names
+#'   match values in `time_col` (by default, `period_col`). If `NULL`
+#'   (default), all periods receive equal weight of 1. Use [bt_weights()] to
+#'   generate exponential decay weights.
 #' @param absent Character. How to treat items that belong to the item
 #'   universe (all items appearing anywhere in `data`) but have no row, or
 #'   an `NA` score, in a given period. One of `"ignore"` (default: no
@@ -48,11 +49,37 @@
 #'   under a range of values (sensitivity analysis) rather than a single
 #'   fixed choice.
 #'
-#' @return A square numeric matrix of dimension n_items × n_items, where
+#' @param cluster_col Optional name of the column identifying the
+#'   independent units used for variance estimation (see Details). If
+#'   `NULL` (default), each period is its own cluster. Must be constant
+#'   within each period.
+#' @param time_col Optional name of the column whose values are matched to
+#'   the names of `weights`. If `NULL` (default), `period_col` is used. Needed
+#'   when periods are not time units (e.g. one period per match, weighted by
+#'   season). Must be constant within each period.
+#'
+#' @return An object of class `"bt_win_matrix"`: a square numeric matrix
+#'   (it inherits from `"matrix"`) of dimension n_items × n_items, where
 #'   entry `[i, j]` is the (possibly weighted) number of periods in which
 #'   item `i` outperformed item `j` — including, when `absent = "penalize"`,
 #'   structural wins credited against items absent that period. Row and
 #'   column names are item identifiers.
+#'
+#'   The matrix carries an attribute `"comparisons"`: a data frame with one
+#'   row per pairwise comparison that contributes to the matrix, with
+#'   columns `item1`, `item2` (character), `y` (outcome for `item1`: `1` for
+#'   a win, `0.5` for a tie), `period` (as in `period_col`), `cluster`
+#'   (as in `cluster_col`, or `period` if not supplied), `weight`
+#'   (the row's contribution to the counts: the period weight, multiplied
+#'   by `absent_penalty` for structural rows) and `structural` (logical,
+#'   `TRUE` for rows created by `absent = "penalize"`). Rows with zero
+#'   weight are omitted. The matrix is exactly the weighted aggregation of
+#'   these rows. This period-level record is what allows [bt_fit()] and
+#'   its methods to compute standard errors that account for the
+#'   dependence between comparisons derived from the same period. The
+#'   attribute is dropped by subsetting (e.g. `mat[1:3, 1:3]`); a matrix
+#'   without it can still be fitted, but only model-based standard errors
+#'   are then available.
 #'
 #' @details
 #' The item universe is defined as every distinct value in `item_col`
@@ -68,6 +95,9 @@
 #' specific modelling choice — that absence itself is informative (e.g.
 #' relegation from a league) — and should be selected and justified
 #' explicitly, not left as an implicit default. For contrast, Liu,
+#' It only makes sense when every period is a full participation unit
+#' (e.g. a league season). With one period per match or per consumer,
+#' every item not in that period would be penalized.
 #' Battaglia & Wu (2025, *PLOS One*) handle the same promotion/relegation
 #' scenario in the English Premier League by excluding teams without
 #' consistent presence across the full period, rather than penalizing
@@ -76,6 +106,25 @@
 #' Both `weights` and `absent_penalty` can produce non-integer entries in
 #' the returned matrix. See the Details section of [bt_fit()] for how this
 #' interacts with the underlying `glm()` fit.
+#'
+#' **Periods as comparison blocks.** A "period" is any block within which
+#' scores are comparable: a season (items = teams, score = points), a
+#' single match (two rows, score = goals), a consumer (items = products,
+#' score = rating) or a judge (items = wines, score = mark). Scores are
+#' never compared across periods, so each item may appear at most once per
+#' period; duplicated item-period rows are an error. For example, ratings
+#' from several consumers must use the consumer, not the month, as
+#' `period_col`.
+#'
+#' **Clusters.** All pairwise comparisons derived from the same period are
+#' functions of a single vector of scores and are therefore not
+#' independent (e.g. if item `i` finishes first, it beats every other item
+#' that period). The `"comparisons"` attribute records the cluster of every
+#' comparison so that downstream variance estimation can treat clusters as
+#' the independent units. By default each period is a cluster. Supply
+#' `cluster_col` when several periods share a source of dependence, e.g.
+#' one period per pairwise judgement but many judgements per respondent
+#' (`cluster_col = "respondent"`).
 #'
 #' @references
 #' Liu, H. H., Battaglia, J., & Wu, T. T. (2025). Impact of COVID-19 on
@@ -115,7 +164,9 @@ bt_win_matrix <- function(data,
                           higher_is_better = TRUE,
                           weights          = NULL,
                           absent           = c("ignore", "penalize"),
-                          absent_penalty   = 1) {
+                          absent_penalty   = 1,
+                          cluster_col      = NULL,
+                          time_col         = NULL) {
   
   # ── Input validation ──────────────────────────────────────────────────────
   if (!is.data.frame(data)) {
@@ -133,7 +184,14 @@ bt_win_matrix <- function(data,
     warning("`absent_penalty` is ignored when `absent = \"ignore\"`.", call. = FALSE)
   }
   
-  required_cols <- c(item_col, period_col, score_col)
+  for (arg in c("cluster_col", "time_col")) {
+    val <- get(arg)
+    if (!is.null(val) && (!is.character(val) || length(val) != 1)) {
+      stop("`", arg, "` must be NULL or a single column name.", call. = FALSE)
+    }
+  }
+  
+  required_cols <- c(item_col, period_col, score_col, cluster_col, time_col)
   missing_cols  <- setdiff(required_cols, names(data))
   if (length(missing_cols) > 0) {
     stop(
@@ -145,10 +203,41 @@ bt_win_matrix <- function(data,
   
   # ── Rename to internal names for clarity ─────────────────────────────────
   data <- data.frame(
-    item   = data[[item_col]],
-    period = data[[period_col]],
-    score  = suppressWarnings(as.numeric(data[[score_col]]))
+    item    = as.character(data[[item_col]]),
+    period  = data[[period_col]],
+    score   = suppressWarnings(as.numeric(data[[score_col]])),
+    cluster = if (is.null(cluster_col)) data[[period_col]] else data[[cluster_col]],
+    time    = if (is.null(time_col)) data[[period_col]] else data[[time_col]],
+    stringsAsFactors = FALSE
   )
+  
+  # ── Structural validation of periods, clusters and time ──────────────────
+  dup <- duplicated(data[, c("item", "period")])
+  if (any(dup)) {
+    ex <- utils::head(unique(paste0(data$item[dup], " @ ", data$period[dup])), 3)
+    stop(
+      "Each item may appear at most once per period (scores are only ",
+      "compared within a period). Duplicated item-period rows, e.g.: ",
+      paste(ex, collapse = "; "),
+      ". If rows come from different raters, use the rater as `period_col`.",
+      call. = FALSE
+    )
+  }
+  
+  for (col in c("cluster", "time")) {
+    if (anyNA(data[[col]])) {
+      stop("`", col, "_col` must not contain missing values.", call. = FALSE)
+    }
+    n_per_period <- tapply(data[[col]], as.character(data$period),
+                           function(z) length(unique(z)))
+    if (any(n_per_period > 1)) {
+      stop("`", col, "_col` must be constant within each period; it varies in ",
+           "period(s): ",
+           paste(utils::head(names(n_per_period)[n_per_period > 1], 3),
+                 collapse = ", "),
+           ".", call. = FALSE)
+    }
+  }
   
   # Item universe: every item appearing anywhere in `data`, not just within
   # a single period. See Details for why the caller must bound the window.
@@ -160,26 +249,27 @@ bt_win_matrix <- function(data,
     stop("`data` must contain at least 2 distinct items.", call. = FALSE)
   }
   
-  # ── Initialise win count matrix ───────────────────────────────────────────
-  win_counts <- matrix(
-    0,
-    nrow     = n,
-    ncol     = n,
-    dimnames = list(items, items)
-  )
+  # ── Build the period-level comparison records ─────────────────────────────
+  # Single source of truth: the win matrix is aggregated from these rows
+  # below, so the matrix and the "comparisons" attribute cannot disagree.
+  rows <- vector("list", length(periods))
   
-  # ── Accumulate wins per period ────────────────────────────────────────────
-  for (p in periods) {
+  for (k in seq_along(periods)) {
+    p <- periods[k]
     
     sub <- data[data$period == p, ]
+    cl  <- sub$cluster[1]
+    tm  <- as.character(sub$time[1])
     sub <- sub[!is.na(sub$score), ]
     
-    # Period weight (defaults to 1 if not supplied)
-    w <- if (!is.null(weights) && as.character(p) %in% names(weights)) {
-      weights[[as.character(p)]]
+    # Weight looked up by the period's time value (defaults to 1)
+    w <- if (!is.null(weights) && tm %in% names(weights)) {
+      weights[[tm]]
     } else {
       1
     }
+    
+    rows_p <- list()
     
     # ── Real comparisons among items present this period (needs >= 2) ──────
     if (nrow(sub) >= 2) {
@@ -190,25 +280,22 @@ bt_win_matrix <- function(data,
         sub[order(sub$score), ]
       }
       
-      items_p  <- sub_ord$item
-      scores_p <- sub_ord$score
-      n_p      <- nrow(sub_ord)
-      
       # After sorting, position i always ranks above position j (i < j).
-      # We only need the raw scores to detect ties — never to decide the winner.
-      for (i in seq_len(n_p - 1)) {
-        for (j in seq(i + 1, n_p)) {
-          wi <- items_p[i]
-          wj <- items_p[j]
-          
-          if (scores_p[i] != scores_p[j]) {
-            win_counts[wi, wj] <- win_counts[wi, wj] + w
-          } else {
-            win_counts[wi, wj] <- win_counts[wi, wj] + 0.5 * w
-            win_counts[wj, wi] <- win_counts[wj, wi] + 0.5 * w
-          }
-        }
-      }
+      # Raw scores are used only to detect ties, never to decide the winner.
+      idx <- utils::combn(nrow(sub_ord), 2)
+      s1  <- sub_ord$score[idx[1, ]]
+      s2  <- sub_ord$score[idx[2, ]]
+      
+      rows_p$real <- data.frame(
+        item1      = sub_ord$item[idx[1, ]],
+        item2      = sub_ord$item[idx[2, ]],
+        y          = ifelse(s1 != s2, 1, 0.5),
+        period     = rep(p, ncol(idx)),
+        cluster    = rep(cl, ncol(idx)),
+        weight     = rep(w, ncol(idx)),
+        structural = FALSE,
+        stringsAsFactors = FALSE
+      )
     }
     
     # ── Structural penalty for absent items (needs >= 1 present item) ──────
@@ -218,13 +305,94 @@ bt_win_matrix <- function(data,
     if (absent == "penalize" && nrow(sub) >= 1) {
       present_items <- unique(sub$item)
       absent_items  <- setdiff(items, present_items)
-      for (a in absent_items) {
-        for (j in present_items) {
-          win_counts[j, a] <- win_counts[j, a] + w * absent_penalty
-        }
+      if (length(absent_items) > 0) {
+        grid <- expand.grid(
+          item1 = present_items,
+          item2 = absent_items,
+          stringsAsFactors = FALSE
+        )
+        rows_p$structural <- data.frame(
+          item1      = grid$item1,
+          item2      = grid$item2,
+          y          = 1,
+          period     = rep(p, nrow(grid)),
+          cluster    = rep(cl, nrow(grid)),
+          weight     = rep(w * absent_penalty, nrow(grid)),
+          structural = TRUE,
+          stringsAsFactors = FALSE
+        )
       }
+    }
+    
+    if (length(rows_p) > 0) {
+      rows[[k]] <- do.call(rbind, unname(rows_p))
     }
   }
   
+  rows <- rows[!vapply(rows, is.null, logical(1))]
+  comparisons <- if (length(rows) > 0) {
+    do.call(rbind, rows)
+  } else {
+    data.frame(
+      item1 = character(0), item2 = character(0), y = numeric(0),
+      period = periods[0], cluster = data$cluster[0], weight = numeric(0),
+      structural = logical(0),
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Zero-weight rows contribute nothing to the counts or to any variance
+  # computation; dropping them keeps absent_penalty = 0 identical to
+  # absent = "ignore".
+  comparisons <- comparisons[comparisons$weight != 0, , drop = FALSE]
+  rownames(comparisons) <- NULL
+  
+  # ── Aggregate into the win count matrix ───────────────────────────────────
+  win_counts <- .bt_aggregate_comparisons(comparisons, items)
+  
+  attr(win_counts, "comparisons") <- comparisons
+  class(win_counts) <- c("bt_win_matrix", "matrix", "array")
   win_counts
+}
+
+# Aggregate comparison rows into a win count matrix (internal) ---------------
+# item1 earns weight * y against item2; item2 earns weight * (1 - y)
+# against item1 (non-zero only for ties). Shared by bt_win_matrix() and the
+# consistency check in bt_fit(), so both use exactly the same arithmetic.
+.bt_aggregate_comparisons <- function(comparisons, items) {
+  n  <- length(items)
+  f1 <- factor(comparisons$item1, levels = items)
+  f2 <- factor(comparisons$item2, levels = items)
+  
+  wins_1 <- tapply(comparisons$weight * comparisons$y, list(f1, f2), sum)
+  wins_2 <- tapply(comparisons$weight * (1 - comparisons$y), list(f2, f1), sum)
+  wins_1[is.na(wins_1)] <- 0
+  wins_2[is.na(wins_2)] <- 0
+  
+  matrix(
+    as.vector(wins_1 + wins_2),
+    nrow     = n,
+    ncol     = n,
+    dimnames = list(items, items)
+  )
+}
+
+#' Print a win count matrix
+#'
+#' Prints the win counts only; the period-level `"comparisons"` attribute
+#' (see [bt_win_matrix()]) is not shown. Use `attr(x, "comparisons")` to
+#' inspect it.
+#'
+#' @param x An object of class `"bt_win_matrix"`, as returned by
+#'   [bt_win_matrix()].
+#' @param ... Further arguments passed to [print()].
+#'
+#' @return `x`, invisibly.
+#'
+#' @export
+print.bt_win_matrix <- function(x, ...) {
+  m <- matrix(as.vector(x), nrow = nrow(x), ncol = ncol(x),
+              dimnames = dimnames(x))
+  print(m, ...)
+  invisible(x)
 }

@@ -5,12 +5,15 @@
 \title{Summarise a fitted Bradley-Terry model with standard errors and
 confidence intervals}
 \usage{
-\method{summary}{btfit}(object, level = 0.95, ...)
+\method{summary}{btfit}(object, level = 0.95, type = NULL, ...)
 }
 \arguments{
 \item{object}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
 
 \item{level}{Confidence level for the interval. Default \code{0.95}.}
+
+\item{type}{Standard error type, passed to \code{\link[=vcov.btfit]{vcov.btfit()}}. \code{NULL}
+(default) selects the cluster-robust estimate when available.}
 
 \item{...}{Further arguments (ignored).}
 }
@@ -19,43 +22,65 @@ An object of class \code{"summary.btfit"}, a list containing:
 \describe{
 \item{\code{table}}{A data frame with columns \code{item}, \code{ability}, \code{se},
 \code{ci_low}, \code{ci_high}, and \code{reliable}, sorted by descending ability.
-The reference item has \code{se}, \code{ci_low}, and \code{ci_high} equal to \code{NA}:
-its ability is fixed to 0 by construction, not estimated, so a
-standard error of 0 would misleadingly imply perfect certainty.}
+\code{se} is the quasi-standard error (see Details); every item, including
+the reference, has one.}
 \item{\code{level}}{The confidence level used.}
 \item{\code{reference}}{The reference item.}
+\item{\code{type}}{Standard error type used (\code{"cluster"} or \code{"model"}).}
+\item{\code{df}}{Degrees of freedom of the reference distribution (\code{Inf}
+means normal).}
+\item{\code{n_clusters}, \code{effective_clusters}, \code{non_estimable}}{As in
+\code{\link[=vcov.btfit]{vcov.btfit()}}.}
 }
 }
 \description{
-Produces a per-item table of estimated abilities, standard errors, and
-Wald confidence intervals, extending the point estimates returned by
-\code{\link[=bt_fit]{bt_fit()}} with the uncertainty quantification computed internally by
-\code{BradleyTerry2::BTm()}.
+Produces a per-item table of estimated abilities, quasi-standard errors
+and confidence intervals.
 }
 \details{
-Confidence intervals are Wald intervals (\verb{estimate +/- qnorm((1+level)/2) * se}).
+\strong{Quasi-standard errors.} Abilities are only identified up to an
+additive constant, so the standard error of a single ability depends on
+the arbitrary choice of reference item: with the weakest item as
+reference (see \code{\link[=bt_fit]{bt_fit()}}), every standard error absorbs the
+uncertainty of that item. \code{summary.btfit()} instead reports
+quasi-standard errors (Firth & de Menezes, 2004), computed with
+\pkg{qvcalc} from the full covariance matrix of \code{\link[=vcov.btfit]{vcov.btfit()}}. They do
+not depend on the reference, exist for every item, and
+\eqn{\sqrt{qse_i^2 + qse_j^2}} approximates the standard error of any
+difference \eqn{\lambda_i - \lambda_j}. The intervals
+\verb{ability +/- q * se} are therefore comparison intervals: they are meant
+for comparing items with each other, not as intervals for an absolute
+ability. For exact pairwise tests, use \code{\link[=bt_significance_matrix]{bt_significance_matrix()}}.
 
-The \code{reliable} column applies to the \strong{entire fit}, not just to the
-items listed in \code{object$separation_items}. This is deliberate, not an
-approximation: because \code{\link[=bt_fit]{bt_fit()}} fixes the \emph{weakest} item as reference,
-and a never-winning item is almost always the weakest, separation most
-often falls exactly on the reference. Every other item's ability and SE
-are computed \emph{relative to that reference}, so the reference's broken
-uncertainty propagates to all of them identically — verified empirically
-to produce numerically identical (and equally uninformative) standard
-errors across every non-separated item in the fit, not just the flagged
-one. Reporting only the separated item(s) as unreliable would therefore
-be misleading, not conservative. If \code{object$separation_items} is
-non-empty, \code{reliable} is \code{FALSE} for every row.
+Quasi-variances can be negative, or not computable, when the covariance
+matrix is far from the structure they approximate. In practice this
+happens with very few items or clusters, where the cluster-robust
+covariance is itself noisy. The affected quasi-standard errors are then
+\code{NA}, with a warning; \code{\link[=bt_significance_matrix]{bt_significance_matrix()}} uses the full
+covariance matrix and is unaffected.
+
+\code{q} is the \code{(1 + level) / 2} quantile of a t distribution with \code{df}
+degrees of freedom (\eqn{G - 1} for cluster-robust errors) or of the
+normal distribution for model-based errors.
+
+\strong{Reliability.} Items whose uncertainty cannot be estimated (see
+\code{non_estimable} in \code{\link[=vcov.btfit]{vcov.btfit()}}) have \code{NA} standard errors and
+intervals and \code{reliable = FALSE}; quasi-variances are computed from the
+remaining items only. If \code{object$separation_items} is non-empty,
+\code{reliable} is \code{FALSE} for every row. Quasi-variances are fitted jointly to the whole
+covariance matrix, so the diverging variance of a separated item can
+distort every item's quasi-standard error; flagging only the separated
+item(s) would not be conservative.
 }
 \examples{
-data <- data.frame(
-  item   = c("A", "B", "C", "A", "B", "C"),
-  period = c(2021, 2021, 2021, 2022, 2022, 2022),
-  score  = c(80, 70, 60, 65, 85, 55)
-)
-mat <- bt_win_matrix(data, score_col = "score")
-fit <- bt_fit(mat)
+set.seed(1)
+data <- data.frame(item = rep(LETTERS[1:5], 10), period = rep(1:10, each = 5))
+data$score <- rep(c(3, 2.25, 1.5, 0.75, 0), 10) + rnorm(50)
+fit <- bt_fit(bt_win_matrix(data))
 summary(fit)
 
+}
+\references{
+Firth, D., & de Menezes, R. X. (2004). Quasi-variances. \emph{Biometrika},
+91(1), 65–80.
 }

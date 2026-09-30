@@ -194,3 +194,138 @@ test_that("an item with zero real wins stays flagged in separation_items after a
   fit <- suppressWarnings(bt_fit(mat))
   expect_true("C" %in% fit$separation_items)
 })
+
+# ── "comparisons" attribute (period-level record for robust variance) ──────
+
+# Rebuild the win matrix from the comparison rows, independently of the
+# aggregation code inside bt_win_matrix().
+rebuild_from_comparisons <- function(cmp, items) {
+  m <- matrix(0, length(items), length(items), dimnames = list(items, items))
+  for (r in seq_len(nrow(cmp))) {
+    i <- cmp$item1[r]; j <- cmp$item2[r]
+    m[i, j] <- m[i, j] + cmp$weight[r] * cmp$y[r]
+    m[j, i] <- m[j, i] + cmp$weight[r] * (1 - cmp$y[r])
+  }
+  m
+}
+
+test_that("win matrix carries a 'comparisons' attribute with the documented columns", {
+  mat <- bt_win_matrix(data_simple, score_col = "score")
+  cmp <- attr(mat, "comparisons")
+  expect_s3_class(cmp, "data.frame")
+  expect_named(cmp, c("item1", "item2", "y", "period", "cluster", "weight",
+                      "structural"))
+})
+
+test_that("each period contributes choose(n_p, 2) real comparisons", {
+  mat <- bt_win_matrix(data_simple, score_col = "score")
+  cmp <- attr(mat, "comparisons")
+  expect_equal(as.vector(table(cmp$period)), c(3, 3))  # choose(3, 2) per period
+  expect_false(any(cmp$structural))
+})
+
+test_that("the matrix is exactly the weighted aggregation of 'comparisons'", {
+  w <- c("1" = 1, "2" = 0.4)
+  mat <- bt_win_matrix(data_absent, score_col = "score", weights = w,
+                       absent = "penalize", absent_penalty = 0.5)
+  cmp <- attr(mat, "comparisons")
+  expect_equal(unclass(mat)[, ], rebuild_from_comparisons(cmp, rownames(mat)),
+               ignore_attr = TRUE)
+})
+
+test_that("ties are recorded with y = 0.5", {
+  data_tie <- data.frame(item = c("X", "Y", "Z"), period = "p1",
+                         score = c(100, 100, 80))
+  cmp <- attr(bt_win_matrix(data_tie, score_col = "score"), "comparisons")
+  tie_row <- cmp[cmp$item1 %in% c("X", "Y") & cmp$item2 %in% c("X", "Y"), ]
+  expect_equal(nrow(tie_row), 1)
+  expect_equal(tie_row$y, 0.5)
+})
+
+test_that("structural rows are flagged and weighted by period weight x penalty", {
+  w <- c("1" = 1, "2" = 0.4)
+  mat <- bt_win_matrix(data_absent, score_col = "score", weights = w,
+                       absent = "penalize", absent_penalty = 0.5)
+  cmp <- attr(mat, "comparisons")
+  st  <- cmp[cmp$structural, ]
+  # Period 2: A and B present, C absent -> two structural rows
+  expect_equal(nrow(st), 2)
+  expect_setequal(st$item1, c("A", "B"))
+  expect_true(all(st$item2 == "C"))
+  expect_true(all(st$y == 1))
+  expect_equal(st$weight, c(0.4 * 0.5, 0.4 * 0.5))
+})
+
+test_that("zero-weight rows are dropped (absent_penalty = 0 leaves no structural rows)", {
+  mat <- bt_win_matrix(data_absent, score_col = "score",
+                       absent = "penalize", absent_penalty = 0)
+  expect_false(any(attr(mat, "comparisons")$structural))
+})
+
+test_that("print() shows the counts but not the 'comparisons' attribute", {
+  mat <- bt_win_matrix(data_simple, score_col = "score")
+  expect_s3_class(mat, "bt_win_matrix")
+  out <- capture.output(print(mat))
+  expect_false(any(grepl("comparisons", out)))
+})
+
+
+# ── periods as blocks, clusters and time ────────────────────────────────────
+
+test_that("duplicated item within a period is an error", {
+  d <- data.frame(item = c("X", "X", "Y", "Y"), period = "07-2020",
+                  score = c(7, 5, 6, 8))
+  expect_error(bt_win_matrix(d), "at most once per period")
+})
+
+test_that("cluster defaults to period", {
+  cmp <- attr(bt_win_matrix(data_simple, score_col = "score"), "comparisons")
+  expect_equal(cmp$cluster, cmp$period)
+})
+
+test_that("cluster_col is recorded and does not change the counts", {
+  # One period per pairwise judgement, two respondents
+  d <- data.frame(
+    item       = c("A", "B", "A", "C", "B", "C", "A", "B"),
+    judgement  = c(1, 1, 2, 2, 3, 3, 4, 4),
+    respondent = c("r1", "r1", "r1", "r1", "r2", "r2", "r2", "r2"),
+    score      = c(1, 0, 0, 1, 1, 0, 1, 0)
+  )
+  m0 <- bt_win_matrix(d, period_col = "judgement")
+  m1 <- bt_win_matrix(d, period_col = "judgement", cluster_col = "respondent")
+  expect_equal(unclass(m0)[, ], unclass(m1)[, ], ignore_attr = TRUE)
+  cmp <- attr(m1, "comparisons")
+  expect_equal(nrow(cmp), 4)
+  expect_setequal(unique(cmp$cluster), c("r1", "r2"))
+})
+
+test_that("cluster_col must be constant within a period", {
+  d <- data.frame(item = c("A", "B"), period = 1, rater = c("r1", "r2"),
+                  score = c(1, 0))
+  expect_error(bt_win_matrix(d, cluster_col = "rater"),
+               "constant within each period")
+})
+
+test_that("time_col drives weight lookup when periods are matches", {
+  d <- data.frame(
+    item   = c("A", "B", "A", "B"),
+    match  = c(1, 1, 2, 2),
+    season = c(2020, 2020, 2021, 2021),
+    goals  = c(2, 1, 0, 3)
+  )
+  w <- c("2020" = 0.5, "2021" = 1)
+  m <- bt_win_matrix(d, period_col = "match", score_col = "goals",
+                     time_col = "season", weights = w)
+  expect_equal(m["A", "B"], 0.5)   # 2020 win, weight 0.5
+  expect_equal(m["B", "A"], 1)     # 2021 win, weight 1
+})
+
+test_that("missing values in cluster_col are an error", {
+  d <- data.frame(item = c("A", "B"), period = 1, rater = NA, score = c(1, 0))
+  expect_error(bt_win_matrix(d, cluster_col = "rater"), "missing values")
+})
+
+test_that("cluster_col and time_col must be single names", {
+  expect_error(bt_win_matrix(data_simple, cluster_col = c("a", "b")),
+               "single column name")
+})

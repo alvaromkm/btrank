@@ -25,12 +25,16 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports: 
     BradleyTerry2,
-    graphics
+    graphics,
+    qvcalc,
+    stats,
+    utils
 URL: https://github.com/alvaromkm/btrank
 BugReports: https://github.com/alvaromkm/btrank/issues
 Suggests: 
     knitr,
     rmarkdown,
+    sandwich,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
