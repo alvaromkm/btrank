@@ -4,7 +4,7 @@ author: "Álvaro Meca Mondéjar, Miguel Ángel Montero Alonso, Juan de Dios Luna
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{btrank: Bradley-Terry Rankings for Paired Comparison Data}
+  %\VignetteIndexEntry{Introduction to btrank}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -50,14 +50,21 @@ library(btrank)
 
 ## Input data format
 
-Every function in **btrank** starts from a data frame with one row per
-item per period:
+Every function in **btrank** starts from a data frame with at most one row
+per item per period:
 
 | Column | Description |
 |--------|-------------|
 | `item` | Item identifier |
-| `period` | Period identifier (season, year, round, ...) |
+| `period` | Comparison block: the unit within which scores are comparable |
 | `score` | Numeric metric used to rank items within each period |
+
+A "period" need not be a unit of time. It is any block within which scores
+can be compared: a season (items are teams, score is points), a single match
+(two rows, score is goals), a consumer (items are products, score is a
+rating) or a judge (items are wines, score is a mark). Scores are never
+compared across periods, so an item may appear only once per period; for
+ratings from several consumers, the consumer, not the month, is the period.
 
 Column names are configurable via `item_col`, `period_col`, `score_col`
 wherever they appear. By default higher `score` is better;
@@ -111,7 +118,17 @@ every lower-ranked item; exact ties split 0.5/0.5. Its arguments:
   absent from it; no comparison is generated between two absent items.
   When `weights` are supplied, this credit is scaled by the weight of the
   period. This vignette uses `"penalize"` throughout, except in the section
-  devoted to comparing both options.
+  devoted to comparing both options. It only makes sense when every period
+  is a full participation unit, such as a league season.
+- `cluster_col` — optional column identifying the independent units used
+  for standard errors (see *Quantifying uncertainty*). By default each
+  period is its own cluster; a different column is needed when several
+  periods share a source of dependence, e.g. one period per pairwise
+  judgement but many judgements per respondent.
+- `time_col` — optional column whose values are matched to the names of
+  `weights`, for when periods are not time units (e.g. one period per match,
+  weighted by season).
+
 ```{r win-matrix}
 win_mat_points <- bt_win_matrix(epl_scores, score_col = "points", absent = "penalize")
 dim(win_mat_points)
@@ -120,7 +137,10 @@ win_mat_points["Arsenal", "Man United"]
 ```
 
 The matrix is not symmetric: entry `[i, j]` is the number of times `i`
-outranked `j`.
+outranked `j`. It also keeps, as the attribute `"comparisons"`, one row per
+pairwise comparison with the period and cluster it came from; the win
+counts alone cannot tell which comparisons share a period, and the
+standard errors below need that information.
 
 ## Fitting the model: `bt_fit()`
 
@@ -136,9 +156,10 @@ print(fit_points)
 
 The returned `btfit` object is a list: `abilities` (named vector),
 `reference` (the anchor item), `items`, `model` (the underlying `BTm`
-fit, for advanced use), and `separation_items` — items that never won or
+fit, for advanced use), `separation_items` — items that never won or
 never lost a single comparison, flagged automatically (see the
-Uncertainty section below for why this matters). Here `separation_items`
+Uncertainty section below for why this matters) — and `comparisons`, the
+comparison-level record taken from the win matrix. Here `separation_items`
 is empty: even with `absent = "penalize"` applied over the full 31-year,
 49-team universe, every item retains at least one real win.
 
@@ -233,30 +254,64 @@ should be stated explicitly, not left implicit.
 
 ## Quantifying uncertainty: `summary.btfit()`, `confint.btfit()`, `vcov.btfit()`
 
-`bt_fit()`'s point estimates say nothing about precision. `vcov.btfit()`
-extracts the variance-covariance matrix of the fitted abilities (from
-`BTm()`'s underlying `glm()`); `summary.btfit(object, level = 0.95)`
-builds a table of `item`, `ability`, `se`, `ci_low`, `ci_high`, and
-`reliable`; `confint.btfit()` returns just the interval, `stats`-style.
+`bt_fit()`'s point estimates say nothing about precision. The usual
+model-based standard errors of `BTm()` treat every comparison as an
+independent binomial trial. That is not the case here: the
+`r choose(20, 2)` comparisons generated from one 20-team season are all
+functions of the same 20 scores. `vcov.btfit()` therefore returns, by
+default, a **cluster-robust** (sandwich) covariance, which treats each
+cluster (by default, each period) as the independent unit (Liang & Zeger,
+1986). The fit is a composite likelihood whose point estimates are
+unaffected; only their variance changes (Varin, Reid & Firth, 2011).
+Temporal weights are handled as importance weights, not as frequencies.
+`vcov(fit, type = "model")` gives the model-based estimate, for comparison
+only.
+
+`summary.btfit(object, level = 0.95)` builds a table of `item`,
+`ability`, `se`, `ci_low`, `ci_high`, and `reliable`; `confint.btfit()`
+returns just the interval, `stats`-style.
 
 ```{r summary}
 s <- summary(fit_points, level = 0.95)
-s$table[s$table$item %in% c("Man United", "Arsenal", "Liverpool", "Chelsea"), ]
+s_top <- s
+s_top$table <- head(s$table, 8)   # print only the first rows
+s_top
 ```
 
-A concrete question this answers: is Liverpool's ability significantly
-different from Chelsea's? Their Wald intervals — [6.31, 7.25] and
-[6.21, 7.14] — overlap substantially; overlapping intervals do not
-prove "no difference" on their own (`bt_significance_matrix()` below
-tests this properly), but they immediately show the gap is small
-relative to the uncertainty, which the point estimates alone do not.
+Three details matter when reading this table:
 
-`reliable` applies to the **whole fit**, not per item: `bt_fit()` fixes
-the *weakest* item as reference, and a never-winning item is almost
-always that weakest item, so a broken standard error for the reference
-propagates identically to every other item's SE (each is expressed
-relative to it). If any item is flagged in `separation_items`,
-`reliable` is `FALSE` for every row — reported, not silently omitted.
+- **Quasi-standard errors.** Abilities are only defined relative to the
+  reference item, so an ordinary standard error depends on that arbitrary
+  choice. `se` is instead the quasi-standard error (Firth & de Menezes,
+  2004), which does not depend on the reference and exists for every item,
+  the reference included. The intervals are comparison intervals: they
+  are for comparing items with each other, not for an absolute ability.
+- **t reference.** Intervals use a t distribution with $G - 1$ degrees of
+  freedom, $G$ being the number of clusters (here `r s$n_clusters`). The
+  header also reports an *effective* number of clusters, which falls when
+  temporal weighting concentrates the information in few periods; it is
+  descriptive only.
+- **Items in a single cluster.** The cluster-robust estimate cannot
+  measure the uncertainty of an item whose comparisons all come from one
+  cluster (a team present in a single season under `absent = "ignore"`):
+  such items get `NA` and `reliable = FALSE`. With `absent = "penalize"`,
+  as here, structural comparisons place every team in every season, so no
+  item is affected.
+
+A concrete question this answers: is Liverpool's ability significantly
+different from Chelsea's? Their intervals —
+[`r sprintf("%.2f, %.2f", s$table$ci_low[s$table$item == "Liverpool"], s$table$ci_high[s$table$item == "Liverpool"])`]
+and
+[`r sprintf("%.2f, %.2f", s$table$ci_low[s$table$item == "Chelsea"], s$table$ci_high[s$table$item == "Chelsea"])`]
+— overlap substantially; overlapping intervals do not prove "no
+difference" on their own (`bt_significance_matrix()` below tests this
+properly), but they immediately show the gap is small relative to the
+uncertainty, which the point estimates alone do not.
+
+If any item is flagged in `separation_items`, `reliable` is `FALSE` for
+every row: quasi-variances are fitted jointly to the whole covariance
+matrix, so the diverging variance of a separated item can distort every
+item's standard error.
 
 ## Pairwise win probabilities: `bt_prob_matrix()`
 
@@ -275,14 +330,18 @@ alone, not an empirical win rate.
 ## Pairwise significance testing: `bt_significance_matrix()`
 
 `bt_significance_matrix(fit, level = 0.95, method = "holm")` runs a Wald
-test on every pairwise ability difference, using `vcov.btfit()` for the
-joint covariance (so correlation between two items' estimates is
-accounted for, not just their individual SEs). With $n$ items there are
+test on every pairwise ability difference, using the full covariance from
+`vcov.btfit()` (cluster-robust by default, with the same t reference as
+`summary.btfit()`), so correlation between two items' estimates is
+accounted for, not just their individual SEs. The variance of a difference
+does not depend on the reference item, so these tests are exact with
+respect to that choice. With $n$ items there are
 $n(n-1)/2$ simultaneous comparisons, so p-values are adjusted by
 default — `"holm"` (Holm, 1979), `"bonferroni"`, `"BH"`, or `"none"`
 (provided only for comparison; unadjusted p-values understate the true
 false-positive rate here). It returns `p`, `significant`, `method`,
-`level`, and the same fit-wide `reliable` flag as `summary.btfit()`.
+`level`, `type`, `df`, and the same fit-wide `reliable` flag as
+`summary.btfit()`.
 
 **Is the "big six" actually six distinguishable teams?** Refitting on
 just those six clubs (same two functions, restricted data — not a
@@ -299,23 +358,38 @@ sig6 <- bt_significance_matrix(fit_big6)
 sig6
 ```
 
-Of the 15 pairs, six are significant after Holm correction: Tottenham
-against each of the other five clubs (all $p < 0.02$), plus Manchester
-City vs. Manchester United ($p = 0.0105$). The remaining nine pairs —
-among Manchester United, Arsenal, Chelsea and Liverpool, and between
-Manchester City and each of those three — are not significant.
-Tottenham is reliably behind the group; Manchester City is reliably
-behind Manchester United specifically, but statistically
-indistinguishable from Arsenal, Chelsea or Liverpool. This is exactly
-the kind of claim a ranking table alone cannot support, and the reason
-`bt_significance_matrix()` exists as a separate step from `bt_rank()`.
+```{r big-six-count, include = FALSE}
+p_rob <- sig6$p[upper.tri(sig6$p)]
+sig6_model <- suppressWarnings(bt_significance_matrix(fit_big6, type = "model"))
+p_mod <- sig6_model$p[upper.tri(sig6_model$p)]
+```
+
+Of the 15 pairs, `r sum(p_rob < 0.05)` are significant after Holm
+correction: Tottenham against Manchester United, Arsenal, Chelsea and
+Liverpool. Every other pair, including Tottenham against Manchester City,
+is not. Tottenham is reliably behind four of the other five clubs; the
+rest of the group cannot be separated.
+
+The choice of standard error matters here. With the model-based errors,
+which treat each season's 15 comparisons as independent,
+`r sum(p_mod < 0.05)` pairs would be declared significant, including
+Manchester City against Manchester United:
+
+```{r big-six-model}
+sum(p_mod < 0.05)
+sum(p_rob < 0.05)
+```
+
+This is exactly the kind of claim a ranking table alone cannot support,
+and the reason `bt_significance_matrix()` exists as a separate step from
+`bt_rank()`.
 
 ## Visualizing model fit: `plot.btfit()`
 
 `plot.btfit(x, level = 0.95, ...)` draws a caterpillar plot: one point
-per item (ability), one horizontal segment per item (Wald interval),
-ordered weakest-to-strongest; items in `separation_items` are drawn in
-grey rather than black. It is a thin wrapper around `graphics::plot()`
+per item (ability), one horizontal segment per item (the comparison
+interval from `summary.btfit()`), ordered weakest-to-strongest; items
+flagged `reliable = FALSE` are drawn in grey rather than black. It is a thin wrapper around `graphics::plot()`
 using exactly the table `summary.btfit()` computes — no separate
 calculation.
 
@@ -358,24 +432,24 @@ What **btrank** adds is everything around the estimator:
 - building the comparisons from repeated scores (`bt_win_matrix()`);
 - temporal weighting (`bt_weights()`);
 - handling of items absent from a period (`absent`);
-- warnings when standard errors are unreliable because of separation, and
-  pairwise significance tests with multiplicity correction
-  (`summary.btfit()`, `bt_significance_matrix()`).
+- standard errors that account for the dependence between comparisons
+  from the same period, reported as reference-free quasi-standard errors
+  (`vcov.btfit()`, `summary.btfit()`);
+- warnings when standard errors are unreliable because of separation or
+  single-cluster items, and pairwise significance tests with multiplicity
+  correction (`bt_significance_matrix()`).
 
-
-## Limitations
 
 ## Limitations
 
 The following simplifications are known, and are the main directions for
 further development.
 
-- **Standard errors.** They rely on the binomial model underlying `BTm()`,
-  which treats every comparison as an independent trial. Comparisons
-  derived from the same period's ranking are not independent, and no
-  overdispersion correction is applied, so standard errors and p-values
-  should be read as approximate. A quasi-likelihood correction is a natural
-  extension.
+- **Standard errors.** Cluster-robust standard errors assume that clusters
+  are independent of each other and rely on having many of them; with few
+  clusters, or with strong temporal decay, they can be too small. Items
+  present in a single cluster get no standard error at all. Their
+  finite-sample coverage has not yet been assessed by simulation.
 - **Temporal weighting.** `half_life` is chosen by the user, not estimated,
   and the resulting rankings depend on it (see the section on temporal
   weighting). Results should be checked over a range of values; selecting it
@@ -384,15 +458,16 @@ further development.
 - **Home advantage.** The model has no home-advantage parameter. With
   season-level scores its effect largely cancels out, since every team plays
   the same number of home and away matches, but it would matter for
-  match-level data, which the package does not yet accept.
+  match-level data (one period per match).
 - **Separation.** Items that never win or never lose are flagged, but their
   estimates are not corrected. A bias-reduced estimator such as Firth's
   (1993) is a natural next step.
 - **Aggregation.** Only the order of scores within each period is used, not
   the individual matches or the size of the gaps between scores: winning a
   league by twenty points counts the same as winning it by one. This is what
-  keeps weighting across periods well defined, but it discards information;
-  accepting match-level input is a natural next step.
+  keeps weighting across periods well defined, but it discards information.
+  Match-level data can be analysed by using each match as a period, at the
+  cost of the season-level summary.
 
 ## References
 
@@ -415,11 +490,17 @@ English Football Premier League: Analyzing rankings and home advantage
 using extended Bradley-Terry models. *PLOS One*, 20(10), e0332627.
 https://doi.org/10.1371/journal.pone.0332627
 
+Firth, D., & de Menezes, R. X. (2004). Quasi-variances. *Biometrika*,
+91(1), 65–80.
+
+Liang, K.-Y., & Zeger, S. L. (1986). Longitudinal data analysis using
+generalized linear models. *Biometrika*, 73(1), 13–22.
+
+Varin, C., Reid, N., & Firth, D. (2011). An overview of composite
+likelihood methods. *Statistica Sinica*, 21(1), 5–42.
+
 Firth, D. (1993). Bias reduction of maximum likelihood estimates.
 *Biometrika*, 80(1), 27–38.
-
-Elo, A. E. (1978). *The Rating of Chessplayers, Past and Present*. Arco
-Publishing, New York.
 
 football-data.co.uk. English Premier League results, 1995/96–2025/26.
 https://www.football-data.co.uk/englandm.php

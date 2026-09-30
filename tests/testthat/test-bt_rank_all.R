@@ -22,7 +22,9 @@ test_that("bt_rank_all result is identical to manual pipeline", {
   fit <- bt_fit(mat)
   rk_manual  <- bt_rank(fit)
   rk_wrapper <- bt_rank_all(data_simple, score_col = "score", half_life = 1)
-  expect_identical(rk_manual, rk_wrapper)
+  # The wrapper additionally attaches the fit as attribute "fit"
+  expect_identical(rk_manual, rk_wrapper[, names(rk_wrapper)])
+  expect_equal(attr(rk_wrapper, "fit")$abilities, fit$abilities)
 })
 
 test_that("bt_rank_all top_n limits output", {
@@ -91,4 +93,57 @@ test_that("bt_rank_all with top_n re-fits on subset, not just truncates", {
   # Items should be the same but abilities will differ
   expect_equal(sort(rk_two_pass$item), sort(rk_trunc$item))
   expect_false(identical(rk_two_pass$ability, rk_trunc$ability))
+})
+
+
+# ── pass-through of bt_win_matrix() arguments and attached fit ─────────────
+
+test_that("bt_rank_all attaches the fitted btfit object", {
+  rk  <- bt_rank_all(make_data())
+  fit <- attr(rk, "fit")
+  expect_s3_class(fit, "btfit")
+  expect_equal(fit$abilities, bt_fit(bt_win_matrix(make_data()))$abilities)
+})
+
+test_that("with top_n the attached fit is the second-pass subset fit", {
+  rk <- bt_rank_all(make_data(), top_n = 3)
+  expect_setequal(names(attr(rk, "fit")$abilities), rk$item)
+})
+
+test_that("cluster_col is passed through to bt_win_matrix", {
+  d <- make_data()
+  d$league <- ifelse(d$period <= 5, "early", "late")
+  rk <- bt_rank_all(d, cluster_col = "league")
+  expect_setequal(unique(attr(rk, "fit")$comparisons$cluster), c("early", "late"))
+})
+
+test_that("half_life weights are computed over time_col when supplied", {
+  d <- data.frame(
+    item   = c("A", "B", "A", "B", "A", "B"),
+    match  = c(1, 1, 2, 2, 3, 3),
+    season = c(2020, 2020, 2020, 2020, 2021, 2021),
+    goals  = c(2, 1, 0, 3, 1, 0)
+  )
+  rk  <- bt_rank_all(d, period_col = "match", score_col = "goals",
+                     time_col = "season", half_life = 1)
+  cmp <- attr(rk, "fit")$comparisons
+  expect_equal(cmp$weight, c(0.5, 0.5, 1))
+})
+
+test_that("absent and absent_penalty are passed through", {
+  d  <- make_data()
+  d  <- d[!(d$item == "E" & d$period == 10), ]
+  rk <- bt_rank_all(d, absent = "penalize", absent_penalty = 0.5)
+  expect_true(any(attr(rk, "fit")$comparisons$structural))
+  manual <- bt_fit(bt_win_matrix(d, absent = "penalize", absent_penalty = 0.5))
+  expect_equal(attr(rk, "fit")$abilities, manual$abilities)
+})
+
+test_that("absent_penalty with absent = 'ignore' warns as in bt_win_matrix", {
+  expect_warning(bt_rank_all(make_data(), absent_penalty = 0.5), "ignored")
+})
+
+test_that("bt_rank_all errors when the weighting column is missing", {
+  expect_error(bt_rank_all(make_data(), half_life = 1, time_col = "season"),
+               "not found")
 })
