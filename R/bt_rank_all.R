@@ -28,20 +28,13 @@
 #' @param half_life Positive number. If provided, exponential decay weights
 #'   are computed via [bt_weights()] and passed to [bt_win_matrix()]. The
 #'   most recent period receives weight 1; earlier periods receive
-#'   progressively lower weights. Weights are computed over the values of
-#'   `time_col` when supplied, and of `period_col` otherwise. If `NULL`
-#'   (default), all periods are weighted equally.
+#'   progressively lower weights. If `NULL` (default), all periods are
+#'   weighted equally.
 #' @param digits Integer. Number of decimal places for ability columns.
 #'   Default: `4`.
-#' @param absent,absent_penalty,cluster_col,time_col Passed to
-#'   [bt_win_matrix()]; see its documentation. Defaults reproduce
-#'   [bt_win_matrix()]'s defaults.
 #'
 #' @return A data frame as returned by [bt_rank()], with columns `rank`,
-#'   `item`, `ability`, and `ability_norm`. The fitted model is attached as
-#'   the attribute `"fit"` (a `btfit` object; with `top_n`, the second-pass
-#'   fit on the selected subset), so standard errors and tests remain
-#'   available, e.g. `summary(attr(res, "fit"))`.
+#'   `item`, `ability`, and `ability_norm`.
 #'
 #' @seealso [bt_win_matrix()], [bt_fit()], [bt_rank()], [bt_weights()]
 #'   for the individual pipeline steps.
@@ -62,10 +55,6 @@
 #' # Top 2 only — model re-fitted on subset
 #' bt_rank_all(data, score_col = "score", top_n = 2)
 #'
-#' # The fitted model is attached for further inference
-#' res <- bt_rank_all(data, score_col = "score")
-#' class(attr(res, "fit"))
-#'
 #' @export
 bt_rank_all <- function(data,
                         score_col        = "score",
@@ -74,11 +63,7 @@ bt_rank_all <- function(data,
                         higher_is_better = TRUE,
                         top_n            = NULL,
                         half_life        = NULL,
-                        digits           = 4,
-                        absent           = c("ignore", "penalize"),
-                        absent_penalty   = 1,
-                        cluster_col      = NULL,
-                        time_col         = NULL) {
+                        digits           = 4) {
 
   # ── Input validation ──────────────────────────────────────────────────────
   if (!is.data.frame(data)) {
@@ -96,44 +81,27 @@ bt_rank_all <- function(data,
     }
   }
 
-  absent <- match.arg(absent)
-  
   # ── Compute temporal weights (optional) ───────────────────────────────────
-  # Over time_col when supplied (e.g. seasons when periods are matches).
   weights <- NULL
   if (!is.null(half_life)) {
-    weight_col <- if (is.null(time_col)) period_col else time_col
-    if (!weight_col %in% names(data)) {
-      stop("Column(s) not found in `data`: ", weight_col, call. = FALSE)
-    }
-    weights <- bt_weights(periods = unique(data[[weight_col]]),
-                          half_life = half_life)
+    periods <- unique(data[[period_col]])
+    weights <- bt_weights(periods = periods, half_life = half_life)
   }
-  
-  # Only forward absent_penalty when the caller supplied it, so that
-  # bt_win_matrix()'s "ignored with absent = 'ignore'" warning behaves as if
-  # it had been called directly.
-  win_args <- list(
+
+  # ── First pass: fit on all items ──────────────────────────────────────────
+  win_mat_full <- bt_win_matrix(
+    data             = data,
     item_col         = item_col,
     period_col       = period_col,
     score_col        = score_col,
     higher_is_better = higher_is_better,
-    weights          = weights,
-    absent           = absent,
-    cluster_col      = cluster_col,
-    time_col         = time_col
+    weights          = weights
   )
-  if (!missing(absent_penalty)) win_args$absent_penalty <- absent_penalty
-
-  # ── First pass: fit on all items ──────────────────────────────────────────
-  win_mat_full <- do.call(bt_win_matrix, c(list(data = data), win_args))
   fit_full <- bt_fit(win_mat_full)
 
   # ── If no top_n, return ranking from full model ───────────────────────────
   if (is.null(top_n) || top_n >= length(fit_full$abilities)) {
-    res <- bt_rank(fit_full, digits = digits)
-    attr(res, "fit") <- fit_full
-    return(res)
+    return(bt_rank(fit_full, digits = digits))
   }
 
   # ── Identify TOP-N items from first pass ──────────────────────────────────
@@ -143,10 +111,15 @@ bt_rank_all <- function(data,
   # ── Second pass: re-fit on TOP-N subset only ──────────────────────────────
   data_sub <- data[data[[item_col]] %in% top_items, ]
 
-  win_mat_sub <- do.call(bt_win_matrix, c(list(data = data_sub), win_args))
+  win_mat_sub <- bt_win_matrix(
+    data             = data_sub,
+    item_col         = item_col,
+    period_col       = period_col,
+    score_col        = score_col,
+    higher_is_better = higher_is_better,
+    weights          = weights
+  )
   fit_sub <- bt_fit(win_mat_sub)
 
-  res <- bt_rank(fit_sub, digits = digits)
-  attr(res, "fit") <- fit_sub
-  res
+  bt_rank(fit_sub, digits = digits)
 }

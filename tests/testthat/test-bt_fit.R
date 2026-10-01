@@ -15,8 +15,7 @@ test_that("bt_fit returns a btfit object", {
 
 test_that("bt_fit returns required components", {
   fit <- suppressWarnings(bt_fit(mat_simple))
-  expect_named(fit, c("abilities", "reference", "model", "items", "separation_items",
-                    "comparisons"))
+  expect_named(fit, c("abilities", "reference", "model", "items", "separation_items"))
 })
 
 test_that("bt_fit reference item has ability 0", {
@@ -115,50 +114,4 @@ test_that("bt_fit reports no separation for a balanced win matrix", {
   )
   expect_no_warning(fit <- bt_fit(mat_balanced))
   expect_equal(fit$separation_items, character(0))
-})
-
-# ── comparison-level record (for cluster-robust variance) ──────────────────
-
-data_ok <- data.frame(
-  item   = rep(c("A", "B", "C"), 4),
-  period = rep(1:4, each = 3),
-  score  = c(3, 2, 1,  1, 3, 2,  2, 1, 3,  3, 1, 2)
-)
-
-test_that("bt_fit keeps the comparisons record from bt_win_matrix", {
-  mat <- bt_win_matrix(data_ok)
-  fit <- bt_fit(mat)
-  expect_s3_class(fit$comparisons, "data.frame")
-  expect_equal(fit$comparisons, attr(mat, "comparisons"))
-})
-
-test_that("bt_fit stores NULL comparisons for a hand-built matrix, silently", {
-  mat <- unclass(bt_win_matrix(data_ok))
-  attr(mat, "comparisons") <- NULL
-  expect_silent(fit <- bt_fit(mat))
-  expect_null(fit$comparisons)
-})
-
-test_that("bt_fit drops a stale comparisons record with a warning", {
-  mat <- bt_win_matrix(data_ok)
-  mat["A", "B"] <- mat["A", "B"] + 1   # sub-assignment keeps the attribute
-  expect_warning(fit <- bt_fit(mat), "does not match its counts")
-  expect_null(fit$comparisons)
-})
-
-test_that("comparisons record survives the zero-activity item drop", {
-  mat <- bt_win_matrix(data_ok)
-  cmp <- attr(mat, "comparisons")
-  items <- c(rownames(mat), "Z")
-  big <- matrix(0, 4, 4, dimnames = list(items, items))
-  big[1:3, 1:3] <- unclass(mat)
-  attr(big, "comparisons") <- cmp
-  expect_warning(fit <- bt_fit(big), "no comparisons and were dropped")
-  expect_equal(fit$comparisons, cmp)
-})
-
-test_that("point estimates are unchanged by the comparisons record", {
-  mat   <- bt_win_matrix(data_ok)
-  plain <- unclass(mat); attr(plain, "comparisons") <- NULL
-  expect_equal(bt_fit(mat)$abilities, bt_fit(plain)$abilities)
 })

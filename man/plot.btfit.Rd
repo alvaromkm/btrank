@@ -4,14 +4,12 @@
 \alias{plot.btfit}
 \title{Plot method for btfit objects}
 \usage{
-\method{plot}{btfit}(x, level = 0.95, type = NULL, ...)
+\method{plot}{btfit}(x, level = 0.95, ...)
 }
 \arguments{
 \item{x}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
 
 \item{level}{Confidence level for the intervals. Default \code{0.95}.}
-
-\item{type}{Standard error type, passed to \code{\link[=vcov.btfit]{vcov.btfit()}}.}
 
 \item{...}{Further arguments passed to \code{\link[graphics:plot.default]{graphics::plot()}}.}
 }
@@ -19,23 +17,23 @@
 Invisibly returns the \code{summary.btfit} table used to draw the plot.
 }
 \description{
-Caterpillar plot of estimated abilities with comparison intervals (see
-\code{\link[=summary.btfit]{summary.btfit()}}), one row per item, ordered from weakest (bottom) to
-strongest (top).
+Caterpillar plot of estimated abilities with Wald confidence intervals,
+one row per item, ordenado de más débil (abajo) a más fuerte (arriba).
 }
 \details{
 Items flagged \code{reliable = FALSE} (see \code{\link[=summary.btfit]{summary.btfit()}}) are drawn in
-grey, since their intervals are not a meaningful measure of uncertainty.
-Intervals are based on quasi-standard errors, so every item, including
-the reference, has one. Two items whose intervals do not overlap differ
-approximately at the chosen level (without multiplicity adjustment); use
-\code{\link[=bt_significance_matrix]{bt_significance_matrix()}} for adjusted pairwise tests.
+grey, since their confidence intervals are not a meaningful measure of
+uncertainty. The reference item is drawn as a point at 0 with no
+interval, since its ability is fixed by construction, not estimated.
 }
 \examples{
-set.seed(1)
-data <- data.frame(item = rep(LETTERS[1:5], 10), period = rep(1:10, each = 5))
-data$score <- rep(c(3, 2.25, 1.5, 0.75, 0), 10) + rnorm(50)
-fit <- bt_fit(bt_win_matrix(data))
+data_ex <- data.frame(
+  item   = c("A", "B", "C", "A", "B", "C"),
+  period = c(2021, 2021, 2021, 2022, 2022, 2022),
+  score  = c(80, 70, 60, 65, 85, 55)
+)
+mat <- bt_win_matrix(data_ex, score_col = "score")
+fit <- bt_fit(mat)
 plot(fit)
 
 }

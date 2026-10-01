@@ -4,87 +4,25 @@
 \alias{vcov.btfit}
 \title{Variance-covariance matrix of a fitted Bradley-Terry model}
 \usage{
-\method{vcov}{btfit}(object, type = NULL, ...)
+\method{vcov}{btfit}(object, ...)
 }
 \arguments{
 \item{object}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
 
-\item{type}{Character or \code{NULL}. \code{"cluster"} for the cluster-robust
-estimate, \code{"model"} for the model-based estimate. \code{NULL} (default)
-selects \code{"cluster"} when the fit carries a comparison-level record (see
-\code{\link[=bt_fit]{bt_fit()}}) with at least 2 clusters, and \code{"model"} otherwise.}
-
 \item{...}{Further arguments (ignored).}
 }
 \value{
-A square numeric matrix of dimension (n_items - 1) x (n_items - 1)
-with row and column names equal to the item identifiers, excluding
-\code{object$reference}. It carries the attributes \code{type}, \code{n_clusters},
-\code{effective_clusters}, \code{df} and \code{non_estimable} (see Details); for
-\code{type = "model"} these are \code{"model"}, \code{NA}, \code{NA}, \code{Inf} and
-\code{character(0)}.
+A square numeric matrix of dimension (n_items - 1) x (n_items - 1),
+where n_items is \code{length(object$items)}. Row and column names are item
+identifiers, excluding \code{object$reference}.
 }
 \description{
-Returns the variance-covariance matrix of the estimated log-ability
-(lambda) parameters. By default it is a cluster-robust (sandwich)
-estimate that accounts for the dependence between comparisons derived
-from the same cluster; the model-based estimate of
-\code{BradleyTerry2::BTm()} is available for comparison. Names match the item
-identifiers used throughout \pkg{btrank}. The reference item (ability
-fixed to 0 by construction) is not a free parameter and is not included.
-}
-\details{
-\strong{Why a cluster-robust estimate.} \code{\link[=bt_win_matrix]{bt_win_matrix()}} decomposes every
-period into all pairwise comparisons. Comparisons from the same period
-are functions of a single vector of scores and are not independent, and
-temporal weights are importance weights, not frequencies. The
-model-based covariance assumes independent binomial comparisons with
-frequency weights, so it is not a valid measure of sampling uncertainty
-in this setting.
-
-The fit is treated as a weighted composite-likelihood (M-) estimator.
-With clusters \eqn{g = 1, \dots, G} (by default the periods; see
-\code{cluster_col} in \code{\link[=bt_win_matrix]{bt_win_matrix()}}) and score contributions \eqn{U_g}
-summed within each cluster, the estimate is
-\deqn{V = A^{-1} \left(\sum_g U_g U_g^\top\right) A^{-1} \frac{G}{G - 1},}
-where \eqn{A^{-1}} is the model-based covariance (Liang & Zeger, 1986;
-White, 1982; Varin, Reid & Firth, 2011).
-
-\strong{Attributes.} \code{n_clusters} is \eqn{G}. \code{effective_clusters} is a
-Kish-type effective number of clusters,
-\eqn{(\sum_g W_g)^2 / \sum_g W_g^2}, with \eqn{W_g} the total weight of
-cluster \eqn{g}; it is reported as a descriptive diagnostic of how many
-clusters effectively carry the information (it drops when temporal
-decay is strong) and is not used in any computation. \code{df} is the number
-of degrees of freedom used for intervals and tests, \eqn{G - 1} for
-\code{type = "cluster"} (a common convention for cluster-robust inference)
-and \code{Inf} (normal reference) for \code{type = "model"}.
-
-\strong{Items present in a single cluster.} The cluster-robust estimate
-cannot measure the uncertainty of an item whose comparisons all come from
-one cluster (e.g. a team present in a single season): at the fitted
-values its score contributions sum to zero within that cluster, so the
-estimate is degenerate in its direction. Such items are listed in the
-attribute \code{non_estimable}; the rows and columns of the returned matrix
-that involve them are not meaningful, and \code{\link[=summary.btfit]{summary.btfit()}} and
-\code{\link[=bt_significance_matrix]{bt_significance_matrix()}} report \code{NA} for them. Resampling methods
-(jackknife, cluster bootstrap) share this limitation. Structural
-comparisons from \code{absent = "penalize"} count as presence in a cluster.
-
-Requesting \code{type = "model"} explicitly on a fit whose clusters contain
-more than one comparison gives a warning, since the independence
-assumption is known to be violated there.
-}
-\references{
-Liang, K.-Y., & Zeger, S. L. (1986). Longitudinal data analysis using
-generalized linear models. \emph{Biometrika}, 73(1), 13–22.
-
-Varin, C., Reid, N., & Firth, D. (2011). An overview of composite
-likelihood methods. \emph{Statistica Sinica}, 21(1), 5–42.
-
-White, H. (1982). Maximum likelihood estimation of misspecified models.
-\emph{Econometrica}, 50(1), 1–25.
+Extracts the variance-covariance matrix of the estimated log-ability
+(lambda) parameters, re-parametrised so that names match the item
+identifiers used throughout \pkg{btrank} (rather than \code{BTm}'s internal
+\code{"..item"} naming). The reference item (ability fixed to 0 by
+construction) is not a free parameter and is therefore not included.
 }
 \seealso{
-\code{\link[=summary.btfit]{summary.btfit()}}, \code{\link[=confint.btfit]{confint.btfit()}}, \code{\link[=bt_significance_matrix]{bt_significance_matrix()}}
+\code{\link[=summary.btfit]{summary.btfit()}}, \code{\link[=confint.btfit]{confint.btfit()}}
 }

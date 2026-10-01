@@ -4,7 +4,7 @@
 \alias{confint.btfit}
 \title{Confidence intervals for a fitted Bradley-Terry model}
 \usage{
-\method{confint}{btfit}(object, parm, level = 0.95, type = NULL, ...)
+\method{confint}{btfit}(object, parm, level = 0.95, ...)
 }
 \arguments{
 \item{object}{A \code{btfit} object as returned by \code{\link[=bt_fit]{bt_fit()}}.}
@@ -14,14 +14,12 @@ all items are returned.}
 
 \item{level}{Confidence level. Default \code{0.95}.}
 
-\item{type}{Standard error type, passed to \code{\link[=vcov.btfit]{vcov.btfit()}}.}
-
 \item{...}{Further arguments (ignored).}
 }
 \value{
 A numeric matrix with one row per item and two columns giving
-the lower and upper limits of the comparison intervals described in
-\code{\link[=summary.btfit]{summary.btfit()}} Details.
+the lower and upper confidence limits. The reference item's row is
+\code{NA} in both columns (see \code{\link[=summary.btfit]{summary.btfit()}} Details).
 }
 \description{
 Confidence intervals for a fitted Bradley-Terry model

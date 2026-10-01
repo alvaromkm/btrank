@@ -23,10 +23,6 @@
 #'   \item{`separation_items`}{Character vector of item names exhibiting
 #'     quasi-complete separation (zero wins or zero losses across all
 #'     comparisons). Empty (`character(0)`) if none. See Details.}
-#'   \item{`comparisons`}{The comparison-level record (one row per pairwise
-#'     comparison, with its cluster) taken from the `"comparisons"`
-#'     attribute of `win_matrix`, or `NULL` if unavailable. Used by
-#'     [vcov.btfit()] for cluster-robust standard errors. See Details.}
 #' }
 #'
 #' @references
@@ -65,19 +61,10 @@
 #' tie-splitting adjustment, and they state it is safe to ignore for point
 #' estimates. `bt_fit()` suppresses only this specific warning (see
 #' `.muffle_noninteger_count_warning()` below); every other warning from the fit, including
-#' non-convergence, is left untouched.
-#'
-#' **Standard errors.** The model-based covariance of the underlying `BTm`
-#' fit assumes independent binomial comparisons and treats weights as
-#' frequency weights. Neither holds when comparisons are derived from
-#' rankings within a period, or when temporal weights are used. `bt_fit()`
-#' therefore keeps the comparison-level record produced by
-#' [bt_win_matrix()] (its `"comparisons"` attribute), from which
-#' [vcov.btfit()] computes cluster-robust standard errors. The record is
-#' kept only if it reproduces `win_matrix` exactly; if the matrix was built
-#' by hand, subset, or modified after construction, the record is dropped
-#' with a warning (when present) and only model-based standard errors are
-#' available.
+#' non-convergence, is left untouched. Standard errors under non-integer
+#' counts are not addressed by Turner & Firth and are not separately
+#' validated here; see the `absent_penalty` documentation in
+#' [bt_win_matrix()] for a known effect on precision.
 #'
 #' @seealso [bt_win_matrix()] to build the input matrix,
 #'   [bt_rank()] to extract a ranked data frame from the fitted model,
@@ -118,10 +105,6 @@ bt_fit <- function(win_matrix) {
   if (nrow(win_matrix) < 2) {
     stop("`win_matrix` must contain at least 2 items.", call. = FALSE)
   }
-  
-  # ── Comparison-level record (for cluster-robust variance) ────────────────
-  # Taken before any subsetting below, which would drop the attribute.
-  comparisons <- .bt_validated_comparisons(win_matrix)
   
   # ── Drop items with zero activity ─────────────────────────────────────────
   active <- rowSums(win_matrix) + colSums(win_matrix) > 0
@@ -201,8 +184,7 @@ bt_fit <- function(win_matrix) {
       reference        = ref_item,
       model            = fit2,
       items            = new_levels,
-      separation_items = separation_items,
-      comparisons      = comparisons
+      separation_items = separation_items
     ),
     class = "btfit"
   )
@@ -269,31 +251,6 @@ bt_fit <- function(win_matrix) {
     data.frame(item = ref_item,   ability = 0,
                stringsAsFactors = FALSE)
   )
-}
-
-# Return the "comparisons" attribute only if it reproduces the matrix -------
-# Guards against matrices modified after bt_win_matrix() (sub-assignment
-# keeps attributes, so a stale record could otherwise silently survive).
-.bt_validated_comparisons <- function(win_matrix) {
-  cmp <- attr(win_matrix, "comparisons", exact = TRUE)
-  if (is.null(cmp)) return(NULL)
-  
-  items   <- rownames(win_matrix)
-  known   <- all(c(cmp$item1, cmp$item2) %in% items)
-  rebuilt <- if (known) .bt_aggregate_comparisons(cmp, items) else NULL
-  plain   <- matrix(as.vector(win_matrix), nrow(win_matrix),
-                    dimnames = dimnames(win_matrix))
-  
-  if (!known || !isTRUE(all.equal(rebuilt, plain, tolerance = 1e-10))) {
-    warning(
-      "The \"comparisons\" attribute of `win_matrix` does not match its ",
-      "counts (was the matrix modified after bt_win_matrix()?). It has been ",
-      "dropped: only model-based standard errors are available.",
-      call. = FALSE
-    )
-    return(NULL)
-  }
-  cmp
 }
 
 # =============================================================================

@@ -25,10 +25,6 @@ internally by the model.}
 \item{\code{separation_items}}{Character vector of item names exhibiting
 quasi-complete separation (zero wins or zero losses across all
 comparisons). Empty (\code{character(0)}) if none. See Details.}
-\item{\code{comparisons}}{The comparison-level record (one row per pairwise
-comparison, with its cluster) taken from the \code{"comparisons"}
-attribute of \code{win_matrix}, or \code{NULL} if unavailable. Used by
-\code{\link[=vcov.btfit]{vcov.btfit()}} for cluster-robust standard errors. See Details.}
 }
 }
 \description{
@@ -69,19 +65,10 @@ the same device Turner & Firth (2012, Section 9.1) describe for their
 tie-splitting adjustment, and they state it is safe to ignore for point
 estimates. \code{bt_fit()} suppresses only this specific warning (see
 \code{.muffle_noninteger_count_warning()} below); every other warning from the fit, including
-non-convergence, is left untouched.
-
-\strong{Standard errors.} The model-based covariance of the underlying \code{BTm}
-fit assumes independent binomial comparisons and treats weights as
-frequency weights. Neither holds when comparisons are derived from
-rankings within a period, or when temporal weights are used. \code{bt_fit()}
-therefore keeps the comparison-level record produced by
-\code{\link[=bt_win_matrix]{bt_win_matrix()}} (its \code{"comparisons"} attribute), from which
-\code{\link[=vcov.btfit]{vcov.btfit()}} computes cluster-robust standard errors. The record is
-kept only if it reproduces \code{win_matrix} exactly; if the matrix was built
-by hand, subset, or modified after construction, the record is dropped
-with a warning (when present) and only model-based standard errors are
-available.
+non-convergence, is left untouched. Standard errors under non-integer
+counts are not addressed by Turner & Firth and are not separately
+validated here; see the \code{absent_penalty} documentation in
+\code{\link[=bt_win_matrix]{bt_win_matrix()}} for a known effect on precision.
 }
 \examples{
 data <- data.frame(

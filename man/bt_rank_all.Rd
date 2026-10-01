@@ -12,11 +12,7 @@ bt_rank_all(
   higher_is_better = TRUE,
   top_n = NULL,
   half_life = NULL,
-  digits = 4,
-  absent = c("ignore", "penalize"),
-  absent_penalty = 1,
-  cluster_col = NULL,
-  time_col = NULL
+  digits = 4
 )
 }
 \arguments{
@@ -44,23 +40,15 @@ If \code{NULL} (default), all items are returned from a single model fit.}
 \item{half_life}{Positive number. If provided, exponential decay weights
 are computed via \code{\link[=bt_weights]{bt_weights()}} and passed to \code{\link[=bt_win_matrix]{bt_win_matrix()}}. The
 most recent period receives weight 1; earlier periods receive
-progressively lower weights. Weights are computed over the values of
-\code{time_col} when supplied, and of \code{period_col} otherwise. If \code{NULL}
-(default), all periods are weighted equally.}
+progressively lower weights. If \code{NULL} (default), all periods are
+weighted equally.}
 
 \item{digits}{Integer. Number of decimal places for ability columns.
 Default: \code{4}.}
-
-\item{absent, absent_penalty, cluster_col, time_col}{Passed to
-\code{\link[=bt_win_matrix]{bt_win_matrix()}}; see its documentation. Defaults reproduce
-\code{\link[=bt_win_matrix]{bt_win_matrix()}}'s defaults.}
 }
 \value{
 A data frame as returned by \code{\link[=bt_rank]{bt_rank()}}, with columns \code{rank},
-\code{item}, \code{ability}, and \code{ability_norm}. The fitted model is attached as
-the attribute \code{"fit"} (a \code{btfit} object; with \code{top_n}, the second-pass
-fit on the selected subset), so standard errors and tests remain
-available, e.g. \code{summary(attr(res, "fit"))}.
+\code{item}, \code{ability}, and \code{ability_norm}.
 }
 \description{
 Convenience wrapper that runs the full Bradley-Terry pipeline in one step:
@@ -89,10 +77,6 @@ bt_rank_all(data, score_col = "score", half_life = 1)
 
 # Top 2 only — model re-fitted on subset
 bt_rank_all(data, score_col = "score", top_n = 2)
-
-# The fitted model is attached for further inference
-res <- bt_rank_all(data, score_col = "score")
-class(attr(res, "fit"))
 
 }
 \seealso{
