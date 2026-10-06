@@ -26,9 +26,10 @@
 #'   always has weight 1; all others are in (0, 1].
 #'
 #' @references
-#' Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019).
-#' Ranking soccer teams on the basis of their current strength: A comparison
-#' of maximum likelihood approaches. *Statistical Modelling*, 19(1), 55–73.
+#' Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019). Ranking soccer teams
+#' on the basis of their current strength: A comparison of maximum likelihood
+#' approaches. *Statistical Modelling*, 19(1), 55–73.
+#' \doi{10.1177/1471082X18817650}
 #'
 #' @seealso [bt_win_matrix()] which accepts the output of this function via
 #'   its `weights` argument.

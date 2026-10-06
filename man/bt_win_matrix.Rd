@@ -129,6 +129,9 @@ Liu, H. H., Battaglia, J., & Wu, T. T. (2025). Impact of COVID-19 on
 English Football Premier League: Analyzing rankings and home advantage
 using extended Bradley-Terry models. \emph{PLOS One}, 20(10), e0332627.
 https://doi.org/10.1371/journal.pone.0332627
+
+Alvo, M., & Yu, P. L. H. (2014). \emph{Statistical Methods for Ranking Data}.
+Springer, New York. \doi{10.1007/978-1-4939-1471-5}
 }
 \seealso{
 \code{\link[=bt_fit]{bt_fit()}} to fit a Bradley-Terry model from the win matrix,

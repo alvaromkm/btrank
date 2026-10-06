@@ -20,23 +20,31 @@ knitr::opts_chunk$set(
 
 ## Overview
 
-**btrank** is built on the Bradley-Terry model (Bradley & Terry, 1952), a probabilistic model for paired comparisons. Each item $i$ is assigned a latent ability $\lambda_i$, a parameter that is not observed directly but
-inferred from the outcomes of comparisons between items. The probability that $i$ beats $j$ depends only on the difference between their abilities:
+**btrank** is built on the Bradley-Terry model (Bradley & Terry, 1952), a
+probabilistic model for paired comparisons. Each item $i$ is assigned a latent
+ability $\lambda_i$, a parameter that is not observed directly but inferred
+from the outcomes of comparisons between items. The probability that $i$ beats
+$j$ depends only on the difference between their abilities:
 
 $$P(i \text{ beats } j) = \frac{e^{\lambda_i}}{e^{\lambda_i} + e^{\lambda_j}}$$
 
-The package supplies a small, composable set of functions around this
-model: building pairwise comparisons from repeated observations
-(`bt_win_matrix()`), fitting the model (`bt_fit()`), extracting and
-comparing results (`bt_rank()`, `bt_prob_matrix()`), quantifying
-uncertainty (`summary.btfit()`, `confint.btfit()`,
-`bt_significance_matrix()`), and visualising a fit (`plot.btfit()`).
+Repeated rankings can be analysed through the paired comparisons they imply
+(see Alvo & Yu, 2014, Ch. 8, for a review of paired comparison and related
+probability models for ranking data), and this is the route **btrank** takes:
+each period's ranking is decomposed into pairwise outcomes.
+
+The package supplies a small, composable set of functions around this model:
+building pairwise comparisons from scores or rankings observed over several
+periods (`bt_win_matrix()`), fitting the model (`bt_fit()`), extracting and
+comparing results (`bt_rank()`, `bt_prob_matrix()`), quantifying uncertainty
+(`summary.btfit()`, `confint.btfit()`, `bt_significance_matrix()`), and
+visualizing a fit (`plot.btfit()`).
 
 This vignette's purpose is to document what each function does, what its
-arguments control, and what it returns — using 31 seasons of English
-Premier League results as a running example, because its outcomes are
-independently checkable. The football results themselves are illustration,
-not the subject.
+arguments control, and what it returns — using 31 seasons of English Premier
+League results as a running example, because its outcomes are independently
+checkable. The football results themselves are illustration, not the subject.
+
 
 ## Installation
 
@@ -403,9 +411,13 @@ Turner, H., & Firth, D. (2012). Bradley-Terry models in R: The BradleyTerry2
 package. *Journal of Statistical Software*, 48(9), 1–21.
 https://doi.org/10.18637/jss.v048.i09
 
+Alvo, M., & Yu, P. L. H. (2014). *Statistical Methods for Ranking Data*.
+  Springer, New York. https://doi.org/10.1007/978-1-4939-1471-5
+
 Ley, C., Van de Wiele, T., & Van Eetvelde, H. (2019). Ranking soccer teams
 on the basis of their current strength: A comparison of maximum likelihood
-approaches. *Statistical Modelling*, 19(1), 55–77.
+approaches. *Statistical Modelling*, 19(1), 55–73.
+https://doi.org/10.1177/1471082X18817650
 
 Holm, S. (1979). A simple sequentially rejective multiple test procedure.
 *Scandinavian Journal of Statistics*, 6(2), 65–70.

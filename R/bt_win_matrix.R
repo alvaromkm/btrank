@@ -82,6 +82,9 @@
 #' English Football Premier League: Analyzing rankings and home advantage
 #' using extended Bradley-Terry models. *PLOS One*, 20(10), e0332627.
 #' https://doi.org/10.1371/journal.pone.0332627
+#' 
+#' Alvo, M., & Yu, P. L. H. (2014). *Statistical Methods for Ranking Data*.
+#' Springer, New York. \doi{10.1007/978-1-4939-1471-5}
 #'
 #' @seealso [bt_fit()] to fit a Bradley-Terry model from the win matrix,
 #'   [bt_weights()] to compute temporal decay weights.
