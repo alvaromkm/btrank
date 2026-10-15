@@ -194,3 +194,43 @@ test_that("an item with zero real wins stays flagged in separation_items after a
   fit <- suppressWarnings(bt_fit(mat))
   expect_true("C" %in% fit$separation_items)
 })
+# ── absent = "tied_last" ────────────────────────────────────────────────────
+
+test_that("tied_last adds 0.5 ties between absent items and keeps penalize part", {
+  d <- data.frame(
+    item   = c("A", "B", "C", "D", "A", "B"),
+    period = c(1, 1, 1, 1, 2, 2),
+    score  = c(4, 3, 2, 1, 10, 5)
+  )
+  m_pen  <- bt_win_matrix(d, absent = "penalize")
+  m_tied <- bt_win_matrix(d, absent = "tied_last")
+
+  # C and D absent in period 2: tie of 0.5 each, on top of period 1 (C beat D)
+  expect_equal(m_tied["C", "D"], m_pen["C", "D"] + 0.5)
+  expect_equal(m_tied["D", "C"], m_pen["D", "C"] + 0.5)
+
+  # Everything except the absent-absent cells is identical to "penalize"
+  diff <- m_tied - m_pen
+  diff["C", "D"] <- 0
+  diff["D", "C"] <- 0
+  expect_true(all(diff == 0))
+})
+
+test_that("tied_last ties are scaled by period weight and absent_penalty", {
+  d <- data.frame(
+    item   = c("A", "B", "C", "A"),
+    period = c(1, 1, 1, 2),
+    score  = c(3, 2, 1, 5)
+  )
+  w <- c(`1` = 1, `2` = 0.4)
+  m <- bt_win_matrix(d, weights = w, absent = "tied_last", absent_penalty = 0.5)
+  # B and C absent in period 2: each gets 0.5 * 0.4 * 0.5 = 0.1
+  expect_equal(m["B", "C"], 1 + 0.1)
+  expect_equal(m["C", "B"], 0.1)
+})
+
+test_that("tied_last validates absent_penalty", {
+  d <- data.frame(item = c("A", "B"), period = c(1, 1), score = c(2, 1))
+  expect_error(bt_win_matrix(d, absent = "tied_last", absent_penalty = -1),
+               "non-negative")
+})

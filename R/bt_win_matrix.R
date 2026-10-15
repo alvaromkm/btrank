@@ -25,11 +25,16 @@
 #'   universe (all items appearing anywhere in `data`) but have no row, or
 #'   an `NA` score, in a given period. One of `"ignore"` (default: no
 #'   comparison is generated for that item that period — the current,
-#'   unchanged behaviour) or `"penalize"` (every item present that period
+#'   unchanged behaviour), `"penalize"` (every item present that period
 #'   is credited a structural win against the absent item, weighted by
-#'   `absent_penalty` and the period's temporal weight).
+#'   `absent_penalty` and the period's temporal weight; no comparison is
+#'   generated between two absent items) or `"tied_last"` (as `"penalize"`,
+#'   and in addition every pair of items absent that period is recorded as a
+#'   tie, i.e. `0.5 * absent_penalty` wins each, weighted by the period's
+#'   temporal weight). `"tied_last"` is equivalent to treating all items
+#'   absent from a period as jointly tied in last place.
 #' @param absent_penalty Non-negative number. Only used when
-#'   `absent = "penalize"`. `1` (default) treats the absence as equivalent
+#'   `absent` is `"penalize"` or `"tied_last"`. `1` (default) treats the absence as equivalent
 #'   in magnitude to a genuine loss that period. Values in `(0, 1)` soften
 #'   the penalty; `0` is equivalent to `"ignore"` but explicit. This
 #'   operates directly on win/loss counts, never on `score_col`, so an
@@ -62,6 +67,14 @@
 #' multi-decade dataset with `absent = "penalize"` will accumulate
 #' structural losses for every period an item is missing, which may not be
 #' the intended comparison window.
+#'
+#' With `absent = "tied_last"` the structural tie between two absent items
+#' contributes no information about which of them is stronger, but it does
+#' enter the likelihood: it pulls their estimated abilities towards each
+#' other and shrinks the corresponding standard errors. When the item
+#' universe is much larger than the number of items present per period,
+#' structural comparisons can outnumber observed ones; report results under
+#' `"ignore"`, `"penalize"` and `"tied_last"` as a sensitivity analysis.
 #'
 #' `absent = "ignore"` is the default because it makes no assumption about
 #' why an item is missing from a period. `absent = "penalize"` encodes a
@@ -110,6 +123,10 @@
 #' mat_penalized <- bt_win_matrix(data_absent, score_col = "score",
 #'                                absent = "penalize", absent_penalty = 1)
 #'
+#' # Absent items additionally tied with each other (joint last place)
+#' mat_tied_last <- bt_win_matrix(data_absent, score_col = "score",
+#'                                absent = "tied_last")
+#'
 #' @export
 bt_win_matrix <- function(data,
                           item_col         = "item",
@@ -117,7 +134,7 @@ bt_win_matrix <- function(data,
                           score_col        = "score",
                           higher_is_better = TRUE,
                           weights          = NULL,
-                          absent           = c("ignore", "penalize"),
+                          absent           = c("ignore", "penalize", "tied_last"),
                           absent_penalty   = 1) {
   
   # ── Input validation ──────────────────────────────────────────────────────
@@ -127,7 +144,7 @@ bt_win_matrix <- function(data,
   
   absent <- match.arg(absent)
   
-  if (absent == "penalize") {
+  if (absent %in% c("penalize", "tied_last")) {
     if (!is.numeric(absent_penalty) || length(absent_penalty) != 1 ||
         is.na(absent_penalty) || absent_penalty < 0) {
       stop("`absent_penalty` must be a single non-negative number.", call. = FALSE)
@@ -216,14 +233,27 @@ bt_win_matrix <- function(data,
     
     # ── Structural penalty for absent items (needs >= 1 present item) ──────
     # Never touches `score` — operates directly on win/loss counts, so an
-    # absence can never be mistaken for a genuine observed value. No
-    # comparison is generated between two absent items.
-    if (absent == "penalize" && nrow(sub) >= 1) {
+    # absence can never be mistaken for a genuine observed value. With
+    # "penalize" no comparison is generated between two absent items; with
+    # "tied_last" every absent pair is recorded as a tie (joint last place).
+    if (absent %in% c("penalize", "tied_last") && nrow(sub) >= 1) {
       present_items <- unique(sub$item)
       absent_items  <- setdiff(items, present_items)
       for (a in absent_items) {
         for (j in present_items) {
           win_counts[j, a] <- win_counts[j, a] + w * absent_penalty
+        }
+      }
+      
+      if (absent == "tied_last" && length(absent_items) >= 2) {
+        half <- 0.5 * w * absent_penalty
+        for (k in seq_len(length(absent_items) - 1)) {
+          for (m in seq(k + 1, length(absent_items))) {
+            a1 <- absent_items[k]
+            a2 <- absent_items[m]
+            win_counts[a1, a2] <- win_counts[a1, a2] + half
+            win_counts[a2, a1] <- win_counts[a2, a1] + half
+          }
         }
       }
     }

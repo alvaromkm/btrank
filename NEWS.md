@@ -5,7 +5,9 @@ Initial release.
 
 * `bt_win_matrix()`: builds a pairwise win count matrix from panel data,
   with optional temporal weighting, tie handling (0.5 split), and explicit
-  handling of items absent from a period (`absent = "ignore"`/`"penalize"`).
+  handling of items absent from a period (`absent = "ignore"`/`"penalize"`/
+  `"tied_last"`; the latter also records every pair of absent items as a
+  tie, i.e. all absent items share last place in that period).
 * `bt_fit()`: fits a Bradley-Terry model via maximum likelihood, automatically
   setting the weakest item as reference so all ability estimates are >= 0.
   Detects and flags items with quasi-complete separation.

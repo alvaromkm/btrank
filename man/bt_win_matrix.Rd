@@ -11,7 +11,7 @@ bt_win_matrix(
   score_col = "score",
   higher_is_better = TRUE,
   weights = NULL,
-  absent = c("ignore", "penalize"),
+  absent = c("ignore", "penalize", "tied_last"),
   absent_penalty = 1
 )
 }
@@ -42,12 +42,17 @@ decay weights.}
 universe (all items appearing anywhere in \code{data}) but have no row, or
 an \code{NA} score, in a given period. One of \code{"ignore"} (default: no
 comparison is generated for that item that period — the current,
-unchanged behaviour) or \code{"penalize"} (every item present that period
+unchanged behaviour), \code{"penalize"} (every item present that period
 is credited a structural win against the absent item, weighted by
-\code{absent_penalty} and the period's temporal weight).}
+\code{absent_penalty} and the period's temporal weight; no comparison is
+generated between two absent items) or \code{"tied_last"} (as \code{"penalize"},
+and in addition every pair of items absent that period is recorded as a
+tie, i.e. \code{0.5 * absent_penalty} wins each, weighted by the period's
+temporal weight). \code{"tied_last"} is equivalent to treating all items
+absent from a period as jointly tied in last place.}
 
 \item{absent_penalty}{Non-negative number. Only used when
-\code{absent = "penalize"}. \code{1} (default) treats the absence as equivalent
+\code{absent} is \code{"penalize"} or \code{"tied_last"}. \code{1} (default) treats the absence as equivalent
 in magnitude to a genuine loss that period. Values in \verb{(0, 1)} soften
 the penalty; \code{0} is equivalent to \code{"ignore"} but explicit. This
 operates directly on win/loss counts, never on \code{score_col}, so an
@@ -88,6 +93,14 @@ multi-decade dataset with \code{absent = "penalize"} will accumulate
 structural losses for every period an item is missing, which may not be
 the intended comparison window.
 
+With \code{absent = "tied_last"} the structural tie between two absent items
+contributes no information about which of them is stronger, but it does
+enter the likelihood: it pulls their estimated abilities towards each
+other and shrinks the corresponding standard errors. When the item
+universe is much larger than the number of items present per period,
+structural comparisons can outnumber observed ones; report results under
+\code{"ignore"}, \code{"penalize"} and \code{"tied_last"} as a sensitivity analysis.
+
 \code{absent = "ignore"} is the default because it makes no assumption about
 why an item is missing from a period. \code{absent = "penalize"} encodes a
 specific modelling choice — that absence itself is informative (e.g.
@@ -122,6 +135,10 @@ data_absent <- data[-6, ]  # drop C's 2023 row
 mat_ignored   <- bt_win_matrix(data_absent, score_col = "score")
 mat_penalized <- bt_win_matrix(data_absent, score_col = "score",
                                absent = "penalize", absent_penalty = 1)
+
+# Absent items additionally tied with each other (joint last place)
+mat_tied_last <- bt_win_matrix(data_absent, score_col = "score",
+                               absent = "tied_last")
 
 }
 \references{
